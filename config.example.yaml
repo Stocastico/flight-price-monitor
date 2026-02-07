@@ -55,6 +55,8 @@ storage:
 reporting:
   format: console
   html_output_path: "/tmp/flight_deals_report.html"
+  # Email delivery (optional). Set enabled: true and configure below.
+  # Env vars in disabled sections are safely ignored.
   email:
     enabled: false
     smtp_host: smtp.gmail.com

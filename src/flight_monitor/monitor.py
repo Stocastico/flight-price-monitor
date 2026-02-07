@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from flight_monitor.analyzer import PriceAnalyzer
 from flight_monitor.config import AppConfig
@@ -33,8 +33,8 @@ class FlightMonitor:
 
         Returns (deals_found, report_text).
         """
-        run_time = datetime.utcnow()
-        date_from = date.today()
+        run_time = datetime.now(UTC)
+        date_from = datetime.now(UTC).date()
         date_to = date_from + timedelta(days=self._config.search.date_range_days)
 
         all_offers: list[FlightOffer] = []
@@ -59,10 +59,11 @@ class FlightMonitor:
                 filtered = self._filter.apply(route_offers)
                 logger.info("  After filters: %d offers", len(filtered))
 
-                self._db.record_offers(filtered)
-
+                # Analyze BEFORE recording to avoid polluting historical stats
                 deals = self._analyzer.find_deals(filtered, dest)
                 logger.info("  Deals detected: %d", len(deals))
+
+                self._db.record_offers(filtered)
 
                 all_offers.extend(filtered)
                 all_deals.extend(deals)

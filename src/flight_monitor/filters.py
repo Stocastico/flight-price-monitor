@@ -46,6 +46,5 @@ class FlightFilter:
             return False
 
         return not (
-            self._config.excluded_airlines
-            and offer_airlines & set(self._config.excluded_airlines)
+            self._config.excluded_airlines and offer_airlines & set(self._config.excluded_airlines)
         )

@@ -126,9 +126,7 @@ class TestPriceAnalyzer:
         offers_lhr = [_make_offer(destination="LHR", price=p) for p in [200, 220, 240]]
         db.record_offers(offers_lhr)
 
-        dest_config = DestinationConfig(
-            name="London", airports=["LHR", "LGW", "STN"]
-        )
+        dest_config = DestinationConfig(name="London", airports=["LHR", "LGW", "STN"])
         config = AnalysisConfig(deal_threshold_pct=25, min_history_count=3)
         analyzer = PriceAnalyzer(config, db)
 

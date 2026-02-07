@@ -31,6 +31,11 @@ class TestEnvVarInterpolation:
         result = _interpolate_env_vars("plain-string")
         assert result == "plain-string"
 
+    def test_lenient_mode_returns_empty_for_missing(self):
+        os.environ.pop("NONEXISTENT_VAR_XYZ", None)
+        result = _interpolate_env_vars("${NONEXISTENT_VAR_XYZ}", lenient=True)
+        assert result == ""
+
 
 class TestLoadConfig:
     def test_loads_valid_config(self, tmp_path, monkeypatch):
@@ -93,6 +98,32 @@ origins:
         )
         with pytest.raises((ValueError, TypeError)):
             load_config(config_file)
+
+    def test_disabled_email_ignores_unset_env_vars(self, tmp_path, monkeypatch):
+        """Config with disabled email should not fail on unset SMTP_PASSWORD."""
+        monkeypatch.setenv("KIWI_API_KEY", "key")
+        monkeypatch.delenv("SMTP_PASSWORD", raising=False)
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text(
+            """
+credentials:
+  kiwi:
+    api_key: "${KIWI_API_KEY}"
+origins:
+  - code: BIO
+destinations:
+  - name: Berlin
+    airports: [BER]
+reporting:
+  format: console
+  email:
+    enabled: false
+    password: "${SMTP_PASSWORD}"
+"""
+        )
+        config = load_config(config_file)
+        assert config.reporting.email.enabled is False
+        assert config.reporting.email.password == ""
 
     def test_raises_on_nonexistent_file(self, tmp_path):
         with pytest.raises(FileNotFoundError):

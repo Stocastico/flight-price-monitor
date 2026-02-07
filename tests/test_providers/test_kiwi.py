@@ -45,9 +45,7 @@ class TestKiwiProvider:
         assert provider.name() == "kiwi"
 
     @responses.activate
-    def test_search_flights_success(
-        self, provider: KiwiProvider, kiwi_response_data: dict
-    ):
+    def test_search_flights_success(self, provider: KiwiProvider, kiwi_response_data: dict):
         responses.add(
             responses.GET,
             f"{KIWI_BASE_URL}/v2/search",
@@ -73,9 +71,7 @@ class TestKiwiProvider:
         assert offers[0].deep_link.startswith("https://")
 
     @responses.activate
-    def test_search_flights_connecting(
-        self, provider: KiwiProvider, kiwi_response_data: dict
-    ):
+    def test_search_flights_connecting(self, provider: KiwiProvider, kiwi_response_data: dict):
         responses.add(
             responses.GET,
             f"{KIWI_BASE_URL}/v2/search",

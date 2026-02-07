@@ -109,7 +109,7 @@ class TestFlightFilter:
         flt = FlightFilter(config)
 
         offers = [
-            _make_offer(departure_hour=5),   # Too early
+            _make_offer(departure_hour=5),  # Too early
             _make_offer(departure_hour=10),  # OK
             _make_offer(departure_hour=20),  # Too late
         ]

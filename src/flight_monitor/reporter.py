@@ -71,7 +71,7 @@ class Reporter:
             lines.append(
                 f"   Departs: {o.departure_time:%Y-%m-%d %H:%M}"
                 f"  Duration: {hours}h{mins:02d}m"
-                f"  Airline: {o.segments[0].airline}"
+                f"  Airline: {o.segments[0].airline if o.segments else 'N/A'}"
             )
             if o.deep_link:
                 lines.append(f"   Book: {o.deep_link}")
@@ -94,16 +94,14 @@ class Reporter:
                 if deal.is_historical_low
                 else ""
             )
-            link = (
-                f'<a href="{escape(o.deep_link)}">Book</a>' if o.deep_link else ""
-            )
+            link = f'<a href="{escape(o.deep_link)}">Book</a>' if o.deep_link else ""
             rows_html += (
                 "<tr>"
                 f"<td>{escape(o.origin.code)} &rarr; {escape(o.destination.code)}</td>"
-                f"<td><strong>&euro;{o.price}</strong></td>"
+                f"<td><strong>{escape(o.currency)} {o.price}</strong></td>"
                 f"<td>{escape(badge)}</td>"
                 f"<td>{deal.savings_vs_avg_pct:.0f}% below avg"
-                f" (&euro;{deal.historical_avg_price})</td>"
+                f" ({escape(o.currency)} {deal.historical_avg_price})</td>"
                 f"<td>{o.departure_time:%Y-%m-%d %H:%M}</td>"
                 f"<td>{escape(o.segments[0].airline) if o.segments else ''}</td>"
                 f"<td>{low_marker} {link}</td>"

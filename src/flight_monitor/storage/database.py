@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Generator
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -157,6 +157,14 @@ class PriceDatabase:
         max_stops: int | None = None,
     ) -> PriceStats:
         """Aggregate stats across multiple destination airports."""
+        if not destination_codes:
+            return PriceStats(
+                avg_price=Decimal("0"),
+                min_price=Decimal("0"),
+                max_price=Decimal("0"),
+                count=0,
+                last_observed=None,
+            )
         placeholders = ",".join("?" * len(destination_codes))
         query = f"""
             SELECT
@@ -193,9 +201,7 @@ class PriceDatabase:
 
     def purge_old_records(self, older_than_days: int = 365) -> int:
         """Remove records older than N days. Returns count removed."""
-        cutoff = (datetime.utcnow() - timedelta(days=older_than_days)).isoformat()
+        cutoff = (datetime.now(UTC) - timedelta(days=older_than_days)).isoformat()
         with self._connect() as conn:
-            cursor = conn.execute(
-                "DELETE FROM price_history WHERE observed_at < ?", (cutoff,)
-            )
+            cursor = conn.execute("DELETE FROM price_history WHERE observed_at < ?", (cutoff,))
             return cursor.rowcount

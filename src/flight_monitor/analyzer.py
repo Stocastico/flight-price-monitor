@@ -35,9 +35,7 @@ class PriceAnalyzer:
             if stats.avg_price <= 0:
                 continue
 
-            savings_pct = float(
-                (stats.avg_price - offer.price) / stats.avg_price * 100
-            )
+            savings_pct = float((stats.avg_price - offer.price) / stats.avg_price * 100)
 
             if savings_pct >= self._config.deal_threshold_pct:
                 deals.append(

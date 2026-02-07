@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -51,7 +51,7 @@ class TestFlightOffer:
         assert sample_offer.price == Decimal("89.00")
 
     def test_queried_at_defaults_to_now(self):
-        before = datetime.utcnow()
+        before = datetime.now(UTC)
         offer = FlightOffer(
             provider="test",
             provider_id="test-1",
@@ -74,7 +74,7 @@ class TestFlightOffer:
             stops=0,
             price=Decimal("100"),
         )
-        after = datetime.utcnow()
+        after = datetime.now(UTC)
         assert before <= offer.queried_at <= after
 
 

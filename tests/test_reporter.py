@@ -22,9 +22,7 @@ class TestConsoleReporter:
     def test_report_contains_deal_info(self, sample_deal: Deal, sample_offer: FlightOffer):
         config = ReportingConfig(format="console")
         reporter = Reporter(config)
-        report = reporter.generate(
-            [sample_deal], [sample_offer], datetime(2026, 4, 15, 10, 0)
-        )
+        report = reporter.generate([sample_deal], [sample_offer], datetime(2026, 4, 15, 10, 0))
 
         assert "BIO" in report
         assert "BER" in report
@@ -36,30 +34,22 @@ class TestConsoleReporter:
     def test_report_shows_airline(self, sample_deal: Deal, sample_offer: FlightOffer):
         config = ReportingConfig(format="console")
         reporter = Reporter(config)
-        report = reporter.generate(
-            [sample_deal], [sample_offer], datetime(2026, 4, 15, 10, 0)
-        )
+        report = reporter.generate([sample_deal], [sample_offer], datetime(2026, 4, 15, 10, 0))
         assert "VY" in report
 
     def test_report_shows_booking_link(self, sample_deal: Deal, sample_offer: FlightOffer):
         config = ReportingConfig(format="console")
         reporter = Reporter(config)
-        report = reporter.generate(
-            [sample_deal], [sample_offer], datetime(2026, 4, 15, 10, 0)
-        )
+        report = reporter.generate([sample_deal], [sample_offer], datetime(2026, 4, 15, 10, 0))
         assert "https://example.com/book" in report
 
 
 class TestHtmlReporter:
-    def test_html_report_structure(
-        self, sample_deal: Deal, sample_offer: FlightOffer, tmp_path
-    ):
+    def test_html_report_structure(self, sample_deal: Deal, sample_offer: FlightOffer, tmp_path):
         output_path = str(tmp_path / "report.html")
         config = ReportingConfig(format="html", html_output_path=output_path)
         reporter = Reporter(config)
-        report = reporter.generate(
-            [sample_deal], [sample_offer], datetime(2026, 4, 15, 10, 0)
-        )
+        report = reporter.generate([sample_deal], [sample_offer], datetime(2026, 4, 15, 10, 0))
 
         assert "<!DOCTYPE html>" in report
         assert "<table>" in report
@@ -73,9 +63,7 @@ class TestHtmlReporter:
         output_path = tmp_path / "report.html"
         config = ReportingConfig(format="html", html_output_path=str(output_path))
         reporter = Reporter(config)
-        reporter.generate(
-            [sample_deal], [sample_offer], datetime(2026, 4, 15, 10, 0)
-        )
+        reporter.generate([sample_deal], [sample_offer], datetime(2026, 4, 15, 10, 0))
 
         assert output_path.exists()
         content = output_path.read_text()

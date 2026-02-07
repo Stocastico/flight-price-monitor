@@ -78,9 +78,7 @@ class TestFlightMonitor:
 
         # Return offer with departure at 3 AM (should be filtered out)
         early_offer = _make_offer()
-        early_offer = early_offer.model_copy(
-            update={"departure_time": datetime(2026, 4, 15, 3, 0)}
-        )
+        early_offer = early_offer.model_copy(update={"departure_time": datetime(2026, 4, 15, 3, 0)})
         mock_provider.search_flights.return_value = [early_offer]
         mock_factory.return_value = mock_provider
 
@@ -90,9 +88,7 @@ class TestFlightMonitor:
         assert "Total offers scanned: 0" in report or "Offers scanned: 0" in report
 
     @patch("flight_monitor.monitor.create_provider")
-    def test_kiwi_uses_comma_separated_destinations(
-        self, mock_factory, sample_config: AppConfig
-    ):
+    def test_kiwi_uses_comma_separated_destinations(self, mock_factory, sample_config: AppConfig):
         mock_provider = MagicMock()
         mock_provider.name.return_value = "kiwi"
         mock_provider.search_flights.return_value = []
@@ -108,9 +104,11 @@ class TestFlightMonitor:
 
         # Should be called with comma-separated destination
         call_args = mock_provider.search_flights.call_args_list[0]
-        assert call_args.kwargs.get("destination") == "LHR,LGW,STN" or \
-               call_args[1].get("destination") == "LHR,LGW,STN" or \
-               "LHR,LGW,STN" in str(call_args)
+        assert (
+            call_args.kwargs.get("destination") == "LHR,LGW,STN"
+            or call_args[1].get("destination") == "LHR,LGW,STN"
+            or "LHR,LGW,STN" in str(call_args)
+        )
 
     @patch("flight_monitor.monitor.create_provider")
     def test_non_kiwi_searches_per_airport(self, mock_factory, sample_config: AppConfig):
@@ -119,9 +117,7 @@ class TestFlightMonitor:
         mock_provider.search_flights.return_value = []
         mock_factory.return_value = mock_provider
 
-        sample_config.destinations = [
-            DestinationConfig(name="London", airports=["LHR", "LGW"])
-        ]
+        sample_config.destinations = [DestinationConfig(name="London", airports=["LHR", "LGW"])]
 
         monitor = FlightMonitor(sample_config)
         monitor.run()

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from flight_monitor.models import Airport, FlightOffer, FlightSegment, RouteKey
@@ -110,8 +110,8 @@ class TestPriceDatabase:
         assert stats.min_price == Decimal("80.0")
 
     def test_purge_old_records(self, sample_db: PriceDatabase):
-        old_time = datetime.utcnow() - timedelta(days=400)
-        recent_time = datetime.utcnow() - timedelta(days=30)
+        old_time = datetime.now(UTC) - timedelta(days=400)
+        recent_time = datetime.now(UTC) - timedelta(days=30)
 
         offers_old = [_make_offer(price=100, queried_at=old_time)]
         offers_recent = [_make_offer(price=120, queried_at=recent_time)]
@@ -135,3 +135,11 @@ class TestPriceDatabase:
         db.record_offers([_make_offer()])
         route = RouteKey(origin_code="BIO", destination_code="BER")
         assert db.get_route_stats(route).count == 1
+
+    def test_empty_destination_codes_returns_zero_stats(self, sample_db: PriceDatabase):
+        stats = sample_db.get_route_stats_for_destination_group(
+            origin_code="BIO",
+            destination_codes=[],
+        )
+        assert stats.count == 0
+        assert stats.avg_price == Decimal("0")

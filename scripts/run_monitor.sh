@@ -4,10 +4,10 @@
 # Setup:
 #   1. Copy config.example.yaml to ~/.flight_monitor/config.yaml and edit
 #   2. Set KIWI_API_KEY in ~/.flight_monitor/.env
-#   3. Add to crontab (every other Sunday at 9 AM):
-#      0 9 */14 * 0 /path/to/scripts/run_monitor.sh
+#   3. Add to crontab (1st and 15th of each month at 9 AM):
+#      0 9 1,15 * * /path/to/scripts/run_monitor.sh
 #
-set -euo pipefail
+set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
@@ -36,15 +36,22 @@ if [[ ! -f "$CONFIG_PATH" ]]; then
     exit 1
 fi
 
-# Run the monitor
+# Run the monitor (--verbose is a group-level option, must come before subcommand)
 echo "$(date -Iseconds) [INFO] Starting flight monitor..." | tee -a "$LOG_FILE"
 
 if [[ -d "${PROJECT_DIR}/.venv" ]]; then
-    "${PROJECT_DIR}/.venv/bin/flight-monitor" -c "$CONFIG_PATH" run --verbose \
+    "${PROJECT_DIR}/.venv/bin/flight-monitor" -c "$CONFIG_PATH" --verbose run \
         2>&1 | tee -a "$LOG_FILE"
 else
-    flight-monitor -c "$CONFIG_PATH" run --verbose \
+    flight-monitor -c "$CONFIG_PATH" --verbose run \
         2>&1 | tee -a "$LOG_FILE"
 fi
 
-echo "$(date -Iseconds) [INFO] Flight monitor finished." | tee -a "$LOG_FILE"
+# Exit code 1 means no deals found (normal), only propagate real errors
+exit_code=${PIPESTATUS[0]}
+
+echo "$(date -Iseconds) [INFO] Flight monitor finished (exit=$exit_code)." | tee -a "$LOG_FILE"
+
+if [[ $exit_code -gt 1 ]]; then
+    exit "$exit_code"
+fi

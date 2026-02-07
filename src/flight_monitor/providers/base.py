@@ -43,4 +43,5 @@ class ProviderError(Exception):
     def __init__(self, provider: str, status_code: int | None, message: str):
         self.provider = provider
         self.status_code = status_code
-        super().__init__(f"[{provider}] {message} (HTTP {status_code})")
+        status_suffix = f" (HTTP {status_code})" if status_code is not None else ""
+        super().__init__(f"[{provider}] {message}{status_suffix}")

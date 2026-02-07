@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, Field
@@ -43,7 +43,7 @@ class FlightOffer(BaseModel):
     price: Decimal
     currency: str = "EUR"
     deep_link: str = ""
-    queried_at: datetime = Field(default_factory=datetime.utcnow)
+    queried_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     @property
     def is_direct(self) -> bool:
@@ -55,24 +55,6 @@ class RouteKey(BaseModel, frozen=True):
 
     origin_code: str
     destination_code: str
-
-    def __hash__(self) -> int:
-        return hash((self.origin_code, self.destination_code))
-
-
-class PriceRecord(BaseModel):
-    """A historical price observation stored in SQLite."""
-
-    id: int | None = None
-    route_origin: str
-    route_destination: str
-    price: Decimal
-    currency: str
-    stops: int
-    airline: str
-    observed_at: datetime
-    departure_date: date
-    provider: str
 
 
 class Deal(BaseModel):

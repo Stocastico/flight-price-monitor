@@ -10,27 +10,42 @@ import yaml
 from pydantic import BaseModel, Field
 
 
-def _interpolate_env_vars(value: str) -> str:
-    """Replace ${VAR_NAME} with the value of the environment variable."""
+def _interpolate_env_vars(value: str, lenient: bool = False) -> str:
+    """Replace ${VAR_NAME} with the value of the environment variable.
+
+    If lenient=True, unset variables are replaced with empty strings
+    instead of raising ValueError. This is used for optional config sections.
+    """
 
     def replacer(match: re.Match[str]) -> str:
         var_name = match.group(1)
         env_val = os.environ.get(var_name)
         if env_val is None:
+            if lenient:
+                return ""
             raise ValueError(f"Environment variable {var_name} is not set")
         return env_val
 
     return re.sub(r"\$\{(\w+)\}", replacer, value)
 
 
-def _walk_and_interpolate(obj: object) -> object:
+def _walk_and_interpolate(obj: object, lenient: bool = False) -> object:
     """Recursively interpolate env vars in all string values."""
     if isinstance(obj, str):
-        return _interpolate_env_vars(obj)
+        return _interpolate_env_vars(obj, lenient=lenient)
     if isinstance(obj, dict):
-        return {k: _walk_and_interpolate(v) for k, v in obj.items()}
+        # Use lenient mode for optional/disabled email section
+        for key in ("email",):
+            if key in obj and isinstance(obj.get(key), dict):
+                enabled = obj[key].get("enabled", False)
+                if not enabled:
+                    obj[key] = _walk_and_interpolate(obj[key], lenient=True)
+        return {
+            k: _walk_and_interpolate(v, lenient=lenient) if k not in ("email",) else obj[k]
+            for k, v in obj.items()
+        }
     if isinstance(obj, list):
-        return [_walk_and_interpolate(item) for item in obj]
+        return [_walk_and_interpolate(item, lenient=lenient) for item in obj]
     return obj
 
 

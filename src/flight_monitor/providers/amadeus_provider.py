@@ -8,7 +8,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from flight_monitor.models import Airport, FlightOffer, FlightSegment
-from flight_monitor.providers.base import FlightSearchProvider
+from flight_monitor.providers.base import FlightSearchProvider, ProviderError
 
 logger = logging.getLogger(__name__)
 
@@ -49,8 +49,11 @@ class AmadeusProvider(FlightSearchProvider):
 
         all_offers: list[FlightOffer] = []
         current = date_from
+        total_queries = 0
+        failed_queries = 0
 
         while current <= date_to:
+            total_queries += 1
             try:
                 response = self._client.shopping.flight_offers_search.get(
                     originLocationCode=origin,
@@ -66,9 +69,10 @@ class AmadeusProvider(FlightSearchProvider):
                         offer = self._parse_offer(item, currency)
                         if offer.stops <= max_stopovers:
                             all_offers.append(offer)
-                    except (KeyError, ValueError) as exc:
+                    except (KeyError, ValueError, IndexError) as exc:
                         logger.warning("Failed to parse Amadeus offer: %s", exc)
             except ResponseError as e:
+                failed_queries += 1
                 logger.warning(
                     "Amadeus API error for %s->%s on %s: %s",
                     origin,
@@ -77,6 +81,13 @@ class AmadeusProvider(FlightSearchProvider):
                     e,
                 )
             current += timedelta(days=7)
+
+        if total_queries > 0 and failed_queries == total_queries:
+            raise ProviderError(
+                "amadeus",
+                None,
+                f"All {total_queries} queries failed for {origin}->{destination}",
+            )
 
         all_offers.sort(key=lambda o: o.price)
         return all_offers[:max_results]
