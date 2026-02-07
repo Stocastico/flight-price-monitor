@@ -1,0 +1,67 @@
+{
+  "search_id": "test-search-id",
+  "data": [
+    {
+      "id": "kiwi-offer-1",
+      "price": 89,
+      "deep_link": "https://www.kiwi.com/booking?token=abc123",
+      "route": [
+        {
+          "airline": "VY",
+          "flight_no": 1234,
+          "flyFrom": "BIO",
+          "flyTo": "BER",
+          "cityFrom": "Bilbao",
+          "cityTo": "Berlin",
+          "local_departure": "2026-04-15T10:30:00.000Z",
+          "local_arrival": "2026-04-15T13:45:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "kiwi-offer-2",
+      "price": 145,
+      "deep_link": "https://www.kiwi.com/booking?token=def456",
+      "route": [
+        {
+          "airline": "IB",
+          "flight_no": 5678,
+          "flyFrom": "BIO",
+          "flyTo": "MAD",
+          "cityFrom": "Bilbao",
+          "cityTo": "Madrid",
+          "local_departure": "2026-04-15T08:00:00.000Z",
+          "local_arrival": "2026-04-15T09:15:00.000Z"
+        },
+        {
+          "airline": "IB",
+          "flight_no": 9012,
+          "flyFrom": "MAD",
+          "flyTo": "BER",
+          "cityFrom": "Madrid",
+          "cityTo": "Berlin",
+          "local_departure": "2026-04-15T11:00:00.000Z",
+          "local_arrival": "2026-04-15T14:30:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "kiwi-offer-3",
+      "price": 52,
+      "deep_link": "https://www.kiwi.com/booking?token=ghi789",
+      "route": [
+        {
+          "airline": "FR",
+          "flight_no": 3456,
+          "flyFrom": "BIO",
+          "flyTo": "BGY",
+          "cityFrom": "Bilbao",
+          "cityTo": "Bergamo",
+          "local_departure": "2026-04-20T06:30:00.000Z",
+          "local_arrival": "2026-04-20T08:45:00.000Z"
+        }
+      ]
+    }
+  ],
+  "currency": "EUR"
+}

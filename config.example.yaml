@@ -1,0 +1,64 @@
+provider: kiwi
+
+credentials:
+  kiwi:
+    api_key: "${KIWI_API_KEY}"
+  # amadeus:
+  #   client_id: "${AMADEUS_CLIENT_ID}"
+  #   client_secret: "${AMADEUS_CLIENT_SECRET}"
+
+origins:
+  - code: BIO
+    city: Bilbao
+  - code: EAS
+    city: San Sebastián
+  - code: VIT
+    city: Vitoria
+
+destinations:
+  - name: Berlin
+    airports: [BER]
+  - name: London
+    airports: [LHR, LGW, STN, LTN]
+  - name: Verona
+    airports: [VRN]
+  - name: Bergamo
+    airports: [BGY]
+  - name: Milan Linate
+    airports: [LIN]
+  - name: New York
+    airports: [JFK, EWR]
+
+search:
+  date_range_days: 90
+  currency: EUR
+  adults: 1
+  flight_type: oneway
+  max_results_per_route: 50
+
+filters:
+  prefer_direct: true
+  max_stops: 1
+  max_duration_minutes: 600
+  departure_time_earliest: "06:00"
+  departure_time_latest: "22:00"
+  allowed_airlines: []
+  excluded_airlines: []
+
+analysis:
+  deal_threshold_pct: 25
+  min_history_count: 3
+
+storage:
+  db_path: "~/.flight_monitor/prices.db"
+
+reporting:
+  format: console
+  html_output_path: "/tmp/flight_deals_report.html"
+  email:
+    enabled: false
+    smtp_host: smtp.gmail.com
+    smtp_port: 587
+    sender: ""
+    password: "${SMTP_PASSWORD}"
+    recipients: []

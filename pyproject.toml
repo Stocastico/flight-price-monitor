@@ -1,0 +1,51 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "flight-monitor"
+version = "0.1.0"
+description = "Monitor flight prices from Basque Country airports and detect deals"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+dependencies = [
+    "requests>=2.31",
+    "pydantic>=2.5",
+    "pyyaml>=6.0",
+    "click>=8.1",
+]
+
+[project.optional-dependencies]
+amadeus = ["amadeus>=9.0"]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "responses>=0.24",
+    "ruff>=0.2",
+    "mypy>=1.8",
+]
+
+[project.scripts]
+flight-monitor = "flight_monitor.cli:cli"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/flight_monitor"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+packages = ["flight_monitor"]
+mypy_path = ["src"]
