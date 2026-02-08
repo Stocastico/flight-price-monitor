@@ -23,5 +23,11 @@ def create_provider(config: AppConfig) -> FlightSearchProvider:
             client_id=config.credentials.amadeus.client_id,
             client_secret=config.credentials.amadeus.client_secret,
         )
+    elif config.provider == "serpapi":
+        from flight_monitor.providers.serpapi_provider import SerpApiProvider
+
+        if not config.credentials.serpapi:
+            raise ValueError("SerpAPI credentials not configured")
+        return SerpApiProvider(api_key=config.credentials.serpapi.api_key)
     else:
         raise ValueError(f"Unknown provider: {config.provider}")

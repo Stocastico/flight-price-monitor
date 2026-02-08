@@ -71,9 +71,14 @@ class AmadeusCredentials(BaseModel):
     client_secret: str
 
 
+class SerpApiCredentials(BaseModel):
+    api_key: str
+
+
 class CredentialsConfig(BaseModel):
     kiwi: KiwiCredentials | None = None
     amadeus: AmadeusCredentials | None = None
+    serpapi: SerpApiCredentials | None = None
 
 
 class SearchConfig(BaseModel):
