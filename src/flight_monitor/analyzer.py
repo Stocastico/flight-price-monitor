@@ -60,13 +60,15 @@ class PriceAnalyzer:
         destination_config: DestinationConfig,
     ) -> PriceStats | None:
         """Get historical stats, falling back to destination group if needed."""
-        stats = self._db.get_route_stats(route)
+        lookback = self._config.stats_lookback_days
+        stats = self._db.get_route_stats(route, since_days=lookback)
         if stats.count >= self._config.min_history_count:
             return stats
 
         group_stats = self._db.get_route_stats_for_destination_group(
             origin_code=route.origin_code,
             destination_codes=destination_config.airports,
+            since_days=lookback,
         )
         if group_stats.count >= self._config.min_history_count:
             return group_stats

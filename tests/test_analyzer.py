@@ -262,3 +262,35 @@ class TestPriceAnalyzer:
         offer = _make_offer(price=100)
         deals = analyzer.find_deals([offer], dest_config)
         assert deals[0].historical_count == 5
+
+    def test_stats_lookback_days_filters_old_history(self, db, dest_config):
+        """Only recent history should be used when stats_lookback_days is set."""
+        from datetime import UTC, timedelta
+
+        old_time = datetime.now(UTC) - timedelta(days=200)
+        recent_time = datetime.now(UTC) - timedelta(days=5)
+
+        # Old history: expensive
+        old_offers = [_make_offer(price=p, queried_at=old_time) for p in [300, 310, 320]]
+        db.record_offers(old_offers)
+        # Recent history: cheap
+        recent_offers = [_make_offer(price=p, queried_at=recent_time) for p in [80, 85, 90]]
+        db.record_offers(recent_offers)
+
+        # With lookback=30, only recent prices (avg ~85) used -> 80 is NOT a deal
+        config = AnalysisConfig(
+            deal_threshold_pct=25, min_history_count=3, stats_lookback_days=30
+        )
+        analyzer = PriceAnalyzer(config, db)
+        offer = _make_offer(price=80)
+        deals = analyzer.find_deals([offer], dest_config)
+        assert deals == []
+
+        # Without lookback, all history (avg ~197) used -> 80 IS a deal
+        config_all = AnalysisConfig(
+            deal_threshold_pct=25, min_history_count=3, stats_lookback_days=None
+        )
+        analyzer_all = PriceAnalyzer(config_all, db)
+        offer2 = _make_offer(price=80)
+        deals_all = analyzer_all.find_deals([offer2], dest_config)
+        assert len(deals_all) == 1

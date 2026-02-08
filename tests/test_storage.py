@@ -445,3 +445,52 @@ class TestGetPriceTrend:
         trend = sample_db.get_price_trend("BIO", "BER", last_n_days=365)
         assert len(trend) == 1
         assert trend[0]["avg_price"] == 100.0
+
+
+class TestSinceDaysFilter:
+    """Tests for since_days parameter on stats methods."""
+
+    def test_route_stats_since_days(self, sample_db: PriceDatabase):
+        """Stats should only include records within the lookback window."""
+        old = datetime.now(UTC) - timedelta(days=100)
+        recent = datetime.now(UTC) - timedelta(days=5)
+        sample_db.record_offers([
+            _make_offer(price=200, queried_at=old),
+            _make_offer(price=80, queried_at=recent),
+        ])
+        route = RouteKey(origin_code="BIO", destination_code="BER")
+
+        all_stats = sample_db.get_route_stats(route)
+        assert all_stats.count == 2
+
+        recent_stats = sample_db.get_route_stats(route, since_days=30)
+        assert recent_stats.count == 1
+        assert recent_stats.avg_price == Decimal("80.0")
+
+    def test_group_stats_since_days(self, sample_db: PriceDatabase):
+        """Group stats should respect since_days."""
+        old = datetime.now(UTC) - timedelta(days=100)
+        recent = datetime.now(UTC) - timedelta(days=5)
+        sample_db.record_offers([
+            _make_offer(destination="LHR", price=200, queried_at=old),
+            _make_offer(destination="LGW", price=80, queried_at=recent),
+        ])
+        all_stats = sample_db.get_route_stats_for_destination_group(
+            "BIO", ["LHR", "LGW"]
+        )
+        assert all_stats.count == 2
+
+        recent_stats = sample_db.get_route_stats_for_destination_group(
+            "BIO", ["LHR", "LGW"], since_days=30
+        )
+        assert recent_stats.count == 1
+        assert recent_stats.avg_price == Decimal("80.0")
+
+    def test_since_days_none_uses_all(self, sample_db: PriceDatabase):
+        """since_days=None should return all records (default behavior)."""
+        old = datetime.now(UTC) - timedelta(days=500)
+        sample_db.record_offers([_make_offer(price=100, queried_at=old)])
+        route = RouteKey(origin_code="BIO", destination_code="BER")
+
+        stats = sample_db.get_route_stats(route, since_days=None)
+        assert stats.count == 1

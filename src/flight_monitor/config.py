@@ -97,6 +97,7 @@ class FiltersConfig(BaseModel):
 class AnalysisConfig(BaseModel):
     deal_threshold_pct: float = 25.0
     min_history_count: int = 3
+    stats_lookback_days: int | None = None  # None = use all history
 
 
 class StorageConfig(BaseModel):

@@ -139,8 +139,12 @@ class PriceDatabase:
         self,
         route: RouteKey,
         max_stops: int | None = None,
+        since_days: int | None = None,
     ) -> PriceStats:
-        """Return historical price stats for a specific route."""
+        """Return historical price stats for a specific route.
+
+        If since_days is set, only considers records from the last N days.
+        """
         query = """
             SELECT
                 AVG(price) AS avg_price,
@@ -155,6 +159,10 @@ class PriceDatabase:
         if max_stops is not None:
             query += " AND stops <= ?"
             params.append(max_stops)
+        if since_days is not None:
+            cutoff = (datetime.now(UTC) - timedelta(days=since_days)).isoformat()
+            query += " AND observed_at >= ?"
+            params.append(cutoff)
 
         with self._connect() as conn:
             row = conn.execute(query, params).fetchone()
@@ -179,6 +187,7 @@ class PriceDatabase:
         origin_code: str,
         destination_codes: list[str],
         max_stops: int | None = None,
+        since_days: int | None = None,
     ) -> PriceStats:
         """Aggregate stats across multiple destination airports."""
         if not destination_codes:
@@ -204,6 +213,10 @@ class PriceDatabase:
         if max_stops is not None:
             query += " AND stops <= ?"
             params.append(max_stops)
+        if since_days is not None:
+            cutoff = (datetime.now(UTC) - timedelta(days=since_days)).isoformat()
+            query += " AND observed_at >= ?"
+            params.append(cutoff)
 
         with self._connect() as conn:
             row = conn.execute(query, params).fetchone()
