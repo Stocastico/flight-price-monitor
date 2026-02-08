@@ -1,0 +1,40 @@
+{
+  "search_id": "e2e-bio-bgy",
+  "data": [
+    {
+      "id": "kiwi-bio-bgy-1",
+      "price": 42,
+      "deep_link": "https://www.kiwi.com/booking?token=biobgytoken1",
+      "route": [
+        {
+          "airline": "FR",
+          "flight_no": 9871,
+          "flyFrom": "BIO",
+          "flyTo": "BGY",
+          "cityFrom": "Bilbao",
+          "cityTo": "Bergamo",
+          "local_departure": "2026-05-08T07:30:00.000Z",
+          "local_arrival": "2026-05-08T09:45:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "kiwi-bio-bgy-2",
+      "price": 68,
+      "deep_link": "https://www.kiwi.com/booking?token=biobgytoken2",
+      "route": [
+        {
+          "airline": "FR",
+          "flight_no": 9873,
+          "flyFrom": "BIO",
+          "flyTo": "BGY",
+          "cityFrom": "Bilbao",
+          "cityTo": "Bergamo",
+          "local_departure": "2026-05-20T11:00:00.000Z",
+          "local_arrival": "2026-05-20T13:10:00.000Z"
+        }
+      ]
+    }
+  ],
+  "currency": "EUR"
+}

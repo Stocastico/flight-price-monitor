@@ -1,0 +1,23 @@
+{
+  "search_id": "e2e-eas-bgy",
+  "data": [
+    {
+      "id": "kiwi-eas-bgy-1",
+      "price": 95,
+      "deep_link": "https://www.kiwi.com/booking?token=easbgytoken1",
+      "route": [
+        {
+          "airline": "FR",
+          "flight_no": 4420,
+          "flyFrom": "EAS",
+          "flyTo": "BGY",
+          "cityFrom": "San Sebastián",
+          "cityTo": "Bergamo",
+          "local_departure": "2026-05-14T08:30:00.000Z",
+          "local_arrival": "2026-05-14T10:30:00.000Z"
+        }
+      ]
+    }
+  ],
+  "currency": "EUR"
+}

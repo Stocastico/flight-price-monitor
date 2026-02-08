@@ -1,0 +1,33 @@
+{
+  "search_id": "e2e-eas-ber",
+  "data": [
+    {
+      "id": "kiwi-eas-ber-1",
+      "price": 115,
+      "deep_link": "https://www.kiwi.com/booking?token=easbertoken1",
+      "route": [
+        {
+          "airline": "VY",
+          "flight_no": 2501,
+          "flyFrom": "EAS",
+          "flyTo": "BCN",
+          "cityFrom": "San Sebastián",
+          "cityTo": "Barcelona",
+          "local_departure": "2026-05-11T09:00:00.000Z",
+          "local_arrival": "2026-05-11T10:15:00.000Z"
+        },
+        {
+          "airline": "VY",
+          "flight_no": 1880,
+          "flyFrom": "BCN",
+          "flyTo": "BER",
+          "cityFrom": "Barcelona",
+          "cityTo": "Berlin",
+          "local_departure": "2026-05-11T12:00:00.000Z",
+          "local_arrival": "2026-05-11T14:45:00.000Z"
+        }
+      ]
+    }
+  ],
+  "currency": "EUR"
+}
