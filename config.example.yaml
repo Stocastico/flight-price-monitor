@@ -82,3 +82,11 @@ reporting:
     enabled: false
     bot_token: "${TELEGRAM_BOT_TOKEN}"
     chat_id: "${TELEGRAM_CHAT_ID}"
+
+# Watch mode: monitor specific date+route combos for price drops.
+# Run `flight-monitor -c config.yaml watch` to check prices.
+# watch_routes:
+#   - origin: BIO
+#     destination: BER
+#     date: "2026-06-15"
+#     max_price: 80  # optional: flag offers under this price

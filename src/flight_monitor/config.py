@@ -131,6 +131,13 @@ class ReportingConfig(BaseModel):
     telegram: TelegramConfig = Field(default_factory=TelegramConfig)
 
 
+class WatchRoute(BaseModel):
+    origin: str
+    destination: str
+    date: str
+    max_price: float | None = None
+
+
 class AppConfig(BaseModel):
     provider: str = "kiwi"
     credentials: CredentialsConfig
@@ -141,6 +148,7 @@ class AppConfig(BaseModel):
     analysis: AnalysisConfig = Field(default_factory=AnalysisConfig)
     storage: StorageConfig = Field(default_factory=StorageConfig)
     reporting: ReportingConfig = Field(default_factory=ReportingConfig)
+    watch_routes: list[WatchRoute] = Field(default_factory=list)
 
 
 def load_config(path: str | Path) -> AppConfig:

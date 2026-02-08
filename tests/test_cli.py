@@ -230,3 +230,111 @@ class TestTrendsCommand:
             cli, ["-c", str(valid_config_file), "trends", "--days", "30"]
         )
         assert result.exit_code == 0
+
+
+class TestWatchCommand:
+    def test_watch_no_routes_configured(self, runner: CliRunner, valid_config_file: Path):
+        """Watch with no watch_routes should inform user."""
+        result = runner.invoke(cli, ["-c", str(valid_config_file), "watch"])
+        assert result.exit_code == 0
+        assert "No watch_routes" in result.output
+
+    def test_watch_with_routes(self, runner: CliRunner, tmp_path, monkeypatch):
+        """Watch with routes should call provider and display results."""
+        monkeypatch.setenv("KIWI_API_KEY", "test-key")
+        db_path = str(tmp_path / "watch.db")
+        config = tmp_path / "config.yaml"
+        config.write_text(
+            f"""
+provider: kiwi
+credentials:
+  kiwi:
+    api_key: "${{KIWI_API_KEY}}"
+origins:
+  - code: BIO
+destinations:
+  - name: Berlin
+    airports: [BER]
+storage:
+  db_path: "{db_path}"
+watch_routes:
+  - origin: BIO
+    destination: BER
+    date: "2026-06-15"
+    max_price: 100
+"""
+        )
+        with patch("flight_monitor.cli.create_provider") as mock_cp:
+            mock_provider = MagicMock()
+            mock_provider.search_flights.return_value = []
+            mock_cp.return_value = mock_provider
+
+            result = runner.invoke(cli, ["-c", str(config), "watch"])
+            assert result.exit_code == 0
+            assert "BIO -> BER" in result.output
+            assert "No offers found" in result.output
+
+    def test_watch_flags_under_target_price(self, runner: CliRunner, tmp_path, monkeypatch):
+        """Watch should flag offers under max_price."""
+        from datetime import datetime
+        from decimal import Decimal
+
+        from flight_monitor.models import Airport, FlightOffer, FlightSegment
+
+        monkeypatch.setenv("KIWI_API_KEY", "test-key")
+        db_path = str(tmp_path / "watch.db")
+        config = tmp_path / "config.yaml"
+        config.write_text(
+            f"""
+provider: kiwi
+credentials:
+  kiwi:
+    api_key: "${{KIWI_API_KEY}}"
+origins:
+  - code: BIO
+destinations:
+  - name: Berlin
+    airports: [BER]
+storage:
+  db_path: "{db_path}"
+watch_routes:
+  - origin: BIO
+    destination: BER
+    date: "2026-06-15"
+    max_price: 80
+"""
+        )
+
+        dep = datetime(2026, 6, 15, 10, 0)
+        seg = FlightSegment(
+            airline="VY",
+            flight_number="VY100",
+            origin=Airport(code="BIO"),
+            destination=Airport(code="BER"),
+            departure_time=dep,
+            arrival_time=dep.replace(hour=13),
+            duration_minutes=180,
+        )
+        cheap_offer = FlightOffer(
+            provider="kiwi",
+            provider_id="watch-1",
+            origin=seg.origin,
+            destination=seg.destination,
+            segments=[seg],
+            departure_time=dep,
+            arrival_time=dep.replace(hour=13),
+            total_duration_minutes=180,
+            stops=0,
+            price=Decimal("65"),
+            currency="EUR",
+        )
+
+        with patch("flight_monitor.cli.create_provider") as mock_cp:
+            mock_provider = MagicMock()
+            mock_provider.search_flights.return_value = [cheap_offer]
+            mock_cp.return_value = mock_provider
+
+            result = runner.invoke(cli, ["-c", str(config), "watch"])
+            assert result.exit_code == 0
+            assert "EUR 65" in result.output
+            assert "UNDER TARGET" in result.output

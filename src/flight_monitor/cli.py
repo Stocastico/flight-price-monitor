@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import sys
+from datetime import date, timedelta
 from pathlib import Path
 
 import click
@@ -11,6 +12,7 @@ import click
 from flight_monitor.config import load_config
 from flight_monitor.models import RouteKey
 from flight_monitor.monitor import FlightMonitor
+from flight_monitor.providers.factory import create_provider
 from flight_monitor.storage.database import PriceDatabase
 
 
@@ -129,3 +131,57 @@ def trends(ctx: click.Context, days: int, route: str | None) -> None:
                     f"min {entry['min_price']:.0f}  "
                     f"({entry['count']} offers)"
                 )
+
+
+@cli.command()
+@click.pass_context
+def watch(ctx: click.Context) -> None:
+    """Check prices for watched routes (date+route combos in config)."""
+    config = load_config(ctx.obj["config_path"])
+    if not config.watch_routes:
+        click.echo("No watch_routes configured. Add them to config.yaml.")
+        return
+
+    provider = create_provider(config)
+    flex = config.search.date_flex_days
+
+    for wr in config.watch_routes:
+        target = date.fromisoformat(wr.date)
+        d_from = max(target - timedelta(days=flex), date.today())
+        d_to = target + timedelta(days=flex)
+
+        click.echo(f"\n{wr.origin} -> {wr.destination} on {wr.date}:")
+        try:
+            offers = provider.search_flights(
+                origin=wr.origin,
+                destination=wr.destination,
+                date_from=d_from,
+                date_to=d_to,
+                adults=config.search.adults,
+                currency=config.search.currency,
+                max_stopovers=config.filters.max_stops,
+                max_results=5,
+                cabin_bag_only=config.filters.cabin_bag_only,
+                flight_type=config.search.flight_type,
+                nights_min=config.search.nights_min,
+                nights_max=config.search.nights_max,
+            )
+        except Exception as e:
+            click.echo(f"  Error: {e}", err=True)
+            continue
+
+        if not offers:
+            click.echo("  No offers found.")
+            continue
+
+        offers.sort(key=lambda o: o.price)
+        for o in offers[:5]:
+            tag = "DIRECT" if o.is_direct else f"{o.stops} stop"
+            price_alert = ""
+            if wr.max_price and o.price <= wr.max_price:
+                price_alert = " << UNDER TARGET"
+            click.echo(
+                f"  {o.currency} {o.price}  {tag}"
+                f"  {o.departure_time:%Y-%m-%d %H:%M}"
+                f"{price_alert}"
+            )
