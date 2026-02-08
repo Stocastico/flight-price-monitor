@@ -33,8 +33,11 @@ search:
   date_range_days: 90
   currency: EUR
   adults: 1
-  flight_type: oneway
+  flight_type: oneway  # "oneway" or "round" for round-trip
   max_results_per_route: 50
+  # Round-trip options (only used when flight_type: round)
+  nights_min: 2   # Minimum nights at destination
+  nights_max: 7   # Maximum nights at destination
 
 filters:
   prefer_direct: true

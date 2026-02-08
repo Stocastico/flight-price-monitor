@@ -94,6 +94,9 @@ class FlightMonitor:
                     max_stopovers=self._config.filters.max_stops,
                     max_results=self._config.search.max_results_per_route,
                     cabin_bag_only=self._config.filters.cabin_bag_only,
+                    flight_type=self._config.search.flight_type,
+                    nights_min=self._config.search.nights_min,
+                    nights_max=self._config.search.nights_max,
                 )
             except ProviderError as e:
                 logger.error("Search failed for %s->%s: %s", origin_code, destination_str, e)
@@ -113,6 +116,9 @@ class FlightMonitor:
                     max_stopovers=self._config.filters.max_stops,
                     max_results=self._config.search.max_results_per_route,
                     cabin_bag_only=self._config.filters.cabin_bag_only,
+                    flight_type=self._config.search.flight_type,
+                    nights_min=self._config.search.nights_min,
+                    nights_max=self._config.search.nights_max,
                 )
                 offers.extend(results)
             except ProviderError as e:

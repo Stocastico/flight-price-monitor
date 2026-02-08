@@ -82,6 +82,8 @@ class SearchConfig(BaseModel):
     adults: int = 1
     flight_type: str = "oneway"
     max_results_per_route: int = 50
+    nights_min: int = 2
+    nights_max: int = 7
 
 
 class FiltersConfig(BaseModel):

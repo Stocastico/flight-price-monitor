@@ -469,3 +469,55 @@ class TestCabinBagOnly:
         request = responses.calls[0].request
         assert "adult_hold_bag" not in request.url
         assert "adult_hand_bag" not in request.url
+
+
+class TestRoundTripSearch:
+    @responses.activate
+    def test_round_trip_sends_return_params(self, provider: KiwiProvider):
+        """Round-trip should send return dates and nights params."""
+        responses.add(
+            responses.GET,
+            f"{KIWI_BASE_URL}/v2/search",
+            json={"data": []},
+            status=200,
+        )
+
+        provider.search_flights(
+            origin="BIO",
+            destination="BER",
+            date_from=date(2026, 4, 1),
+            date_to=date(2026, 6, 30),
+            flight_type="round",
+            nights_min=3,
+            nights_max=5,
+        )
+
+        request = responses.calls[0].request
+        assert "flight_type=round" in request.url
+        assert "return_from=" in request.url
+        assert "return_to=" in request.url
+        assert "nights_in_dst_from=3" in request.url
+        assert "nights_in_dst_to=5" in request.url
+
+    @responses.activate
+    def test_oneway_does_not_send_return_params(self, provider: KiwiProvider):
+        """One-way search should not include return params."""
+        responses.add(
+            responses.GET,
+            f"{KIWI_BASE_URL}/v2/search",
+            json={"data": []},
+            status=200,
+        )
+
+        provider.search_flights(
+            origin="BIO",
+            destination="BER",
+            date_from=date(2026, 4, 1),
+            date_to=date(2026, 6, 30),
+            flight_type="oneway",
+        )
+
+        request = responses.calls[0].request
+        assert "flight_type=oneway" in request.url
+        assert "return_from" not in request.url
+        assert "nights_in_dst_from" not in request.url

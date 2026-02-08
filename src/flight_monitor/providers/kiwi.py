@@ -39,13 +39,16 @@ class KiwiProvider(FlightSearchProvider):
         nonstop_only: bool = False,
         max_results: int = 50,
         cabin_bag_only: bool = False,
+        flight_type: str = "oneway",
+        nights_min: int = 2,
+        nights_max: int = 7,
     ) -> list[FlightOffer]:
         params = {
             "fly_from": origin,
             "fly_to": destination,
             "date_from": date_from.strftime("%d/%m/%Y"),
             "date_to": date_to.strftime("%d/%m/%Y"),
-            "flight_type": "oneway",
+            "flight_type": flight_type,
             "one_for_city": 0,
             "adults": adults,
             "curr": currency,
@@ -55,6 +58,11 @@ class KiwiProvider(FlightSearchProvider):
             "asc": 1,
             "vehicle_type": "aircraft",
         }
+        if flight_type == "round":
+            params["return_from"] = date_from.strftime("%d/%m/%Y")
+            params["return_to"] = date_to.strftime("%d/%m/%Y")
+            params["nights_in_dst_from"] = nights_min
+            params["nights_in_dst_to"] = nights_max
         if cabin_bag_only:
             params["adult_hold_bag"] = 0
             params["adult_hand_bag"] = 1
