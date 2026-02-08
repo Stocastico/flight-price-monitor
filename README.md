@@ -19,6 +19,7 @@ Monitor flight prices from Basque Country airports (BIO, EAS, VIT) to European a
   - [Running a Monitor Cycle](#running-a-monitor-cycle)
   - [Validating Configuration](#validating-configuration)
   - [Purging Old Data](#purging-old-data)
+  - [Viewing Price Trends](#viewing-price-trends)
 - [Automated Scheduling](#automated-scheduling)
   - [Cron Setup](#cron-setup)
   - [Credential Management](#credential-management)
@@ -42,7 +43,11 @@ Monitor flight prices from Basque Country airports (BIO, EAS, VIT) to European a
 - **Flexible filtering**: Filter by maximum flight duration, departure time window, specific airlines (allow/block lists), and number of stops
 - **Direct flight priority**: Automatically ranks nonstop flights above connecting flights in results
 - **Dual reporting**: Console output for terminal usage and HTML reports for browser viewing, with optional email delivery via SMTP
+- **Telegram notifications**: Instant deal alerts to your phone via Telegram Bot API
 - **Historical tracking**: Stores every price observation in a local SQLite database for trend analysis over time
+- **Price trends**: CLI command to view daily price trends per route with averages, minimums, and offer counts
+- **Offer deduplication**: Identical offers from the same provider are automatically deduplicated via a unique index, keeping the database clean across runs
+- **Configurable lookback window**: Limit price history to recent N days for seasonal routes where old data distorts averages
 - **Cron-ready**: Designed to run unattended every couple of weeks via cron or systemd timers
 - **Environment variable support**: Credentials and secrets are loaded from environment variables, never stored in config files
 
@@ -173,11 +178,14 @@ The analyzer compares current prices against historical data:
 analysis:
   deal_threshold_pct: 25   # Flag as deal if >= 25% below historical average
   min_history_count: 3     # Need at least 3 historical observations before judging
+  # stats_lookback_days: 90  # Only use last 90 days of history (omit for all)
 ```
 
 Deals are detected by comparing each offer's price against the average of all previously observed prices for the same route. If a route doesn't have enough history, the tool falls back to comparing against all airports in the same destination group (e.g., all London airports combined).
 
 On the first few runs, no deals will be detected because the database doesn't yet have enough historical data. After 3+ runs (configurable via `min_history_count`), the system starts identifying anomalies.
+
+Use `stats_lookback_days` to limit the historical window for price averages. This is useful for seasonal routes where summer prices from six months ago would distort winter deal detection. Set to `90` to only consider the last three months, or omit it to use all available history.
 
 ### Reporting
 
@@ -197,7 +205,19 @@ reporting:
     password: "${SMTP_PASSWORD}"   # env var, never put real password here
     recipients:
       - "recipient@example.com"
+
+  # Optional Telegram notifications (works with both console and HTML format)
+  telegram:
+    enabled: false
+    bot_token: "${TELEGRAM_BOT_TOKEN}"
+    chat_id: "${TELEGRAM_CHAT_ID}"
 ```
+
+To set up Telegram notifications:
+1. Create a bot via [@BotFather](https://t.me/BotFather) on Telegram
+2. Note the bot token it gives you
+3. Start a chat with your bot, then get your chat ID from [@userinfobot](https://t.me/userinfobot)
+4. Set the environment variables and enable the section above
 
 ### Environment Variables
 
@@ -209,6 +229,8 @@ The configuration file supports `${VAR_NAME}` syntax for environment variable in
 | `AMADEUS_CLIENT_ID` | Yes (if using Amadeus) | Amadeus API client ID |
 | `AMADEUS_CLIENT_SECRET` | Yes (if using Amadeus) | Amadeus API client secret |
 | `SMTP_PASSWORD` | Only if email enabled | SMTP password for email delivery |
+| `TELEGRAM_BOT_TOKEN` | Only if Telegram enabled | Telegram bot token from @BotFather |
+| `TELEGRAM_CHAT_ID` | Only if Telegram enabled | Telegram chat ID to send messages to |
 
 Environment variables in disabled sections (like email when `enabled: false`) are safely ignored even if unset.
 
@@ -284,6 +306,32 @@ flight-monitor -c config.yaml purge
 flight-monitor -c config.yaml purge --days 180
 ```
 
+### Viewing Price Trends
+
+View historical price trends per route:
+
+```bash
+# Show trends for all routes (last 90 days by default)
+flight-monitor -c config.yaml trends
+
+# Show trends for the last 30 days
+flight-monitor -c config.yaml trends --days 30
+
+# Show trends for a specific route
+flight-monitor -c config.yaml trends --route BIO-BER
+```
+
+Example output:
+
+```
+BIO -> BER  (42 records)
+  Avg: EUR 95  Min: EUR 65  Max: EUR 210
+  Last 90 days:
+    2026-01-15  avg 105  min 79  (8 offers)
+    2026-01-30  avg 92   min 65  (12 offers)
+    2026-02-07  avg 88   min 71  (22 offers)
+```
+
 ## Automated Scheduling
 
 ### Cron Setup
@@ -327,11 +375,11 @@ src/flight_monitor/
   __init__.py           # Package version
   models.py             # Pydantic data models (Airport, FlightOffer, Deal, RouteKey)
   config.py             # YAML config loading with env var interpolation
-  cli.py                # Click CLI (run, validate, purge commands)
+  cli.py                # Click CLI (run, validate, purge, trends commands)
   monitor.py            # Orchestrator: search -> filter -> analyze -> record -> report
   filters.py            # Configurable flight filtering (stops, time, duration, airline)
   analyzer.py           # Deal detection via historical price comparison
-  reporter.py           # Console + HTML report generation, email delivery
+  reporter.py           # Console + HTML + Telegram report generation
   providers/
     base.py             # Abstract FlightSearchProvider interface
     factory.py          # Provider factory (instantiate by config name)
@@ -405,7 +453,7 @@ The SQLite database (`~/.flight_monitor/prices.db`) stores one row per price obs
 | `provider` | TEXT | Which API returned this offer |
 | `provider_id` | TEXT | Provider's unique offer identifier |
 
-Indexed on `(route_origin, route_dest)` and `observed_at` for fast aggregation queries.
+Indexed on `(route_origin, route_dest)` and `observed_at` for fast aggregation queries. A partial unique index on `(provider, provider_id) WHERE provider_id != ''` prevents duplicate offers from being stored across consecutive runs.
 
 ## Development
 
@@ -480,6 +528,11 @@ Claude-code-experiments/
       test_kiwi.py
       test_amadeus.py
       test_factory.py
+    e2e/                    # End-to-end tests with recorded HTTP fixtures
+      conftest.py           # E2E config fixtures and route registration
+      fixtures/             # Recorded Kiwi API JSON responses
+      test_full_run.py      # Full monitor cycle tests
+      test_cli_e2e.py       # CLI integration tests
 ```
 
 ## Troubleshooting
