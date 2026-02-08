@@ -6,7 +6,7 @@ from datetime import datetime
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
-from flight_monitor.config import EmailConfig, ReportingConfig
+from flight_monitor.config import EmailConfig, ReportingConfig, TelegramConfig
 from flight_monitor.models import Airport, Deal, FlightOffer, FlightSegment, RouteKey
 from flight_monitor.reporter import Reporter
 
@@ -434,3 +434,144 @@ class TestEmailReporter:
         with patch("flight_monitor.reporter.smtplib.SMTP") as mock_smtp:
             reporter.generate([deal], [offer], datetime(2026, 4, 15, 10, 0))
             mock_smtp.assert_not_called()
+
+
+class TestTelegramReporter:
+    def test_telegram_sent_when_enabled_with_deals(self):
+        """Telegram message should be sent when enabled and deals exist."""
+        deal, offer = _make_deal()
+        config = ReportingConfig(
+            format="console",
+            telegram=TelegramConfig(
+                enabled=True,
+                bot_token="123456:ABC-DEF",
+                chat_id="-100123456",
+            ),
+        )
+        reporter = Reporter(config)
+
+        with patch("flight_monitor.reporter.requests.post") as mock_post:
+            mock_post.return_value = MagicMock(ok=True)
+            reporter.generate([deal], [offer], datetime(2026, 4, 15, 10, 0))
+            mock_post.assert_called_once()
+            call_kwargs = mock_post.call_args
+            assert "123456:ABC-DEF" in call_kwargs[0][0]
+            assert call_kwargs[1]["json"]["chat_id"] == "-100123456"
+            assert "BIO" in call_kwargs[1]["json"]["text"]
+
+    def test_telegram_not_sent_without_deals(self):
+        """Telegram should NOT be sent when there are no deals."""
+        config = ReportingConfig(
+            format="console",
+            telegram=TelegramConfig(
+                enabled=True,
+                bot_token="123456:ABC-DEF",
+                chat_id="-100123456",
+            ),
+        )
+        reporter = Reporter(config)
+
+        with patch("flight_monitor.reporter.requests.post") as mock_post:
+            reporter.generate([], [], datetime(2026, 4, 15, 10, 0))
+            mock_post.assert_not_called()
+
+    def test_telegram_not_sent_when_disabled(self):
+        """Telegram should NOT be sent when disabled."""
+        deal, offer = _make_deal()
+        config = ReportingConfig(
+            format="console",
+            telegram=TelegramConfig(enabled=False),
+        )
+        reporter = Reporter(config)
+
+        with patch("flight_monitor.reporter.requests.post") as mock_post:
+            reporter.generate([deal], [offer], datetime(2026, 4, 15, 10, 0))
+            mock_post.assert_not_called()
+
+    def test_telegram_failure_logged_not_raised(self):
+        """Telegram send failure should be logged, not crash the program."""
+        deal, offer = _make_deal()
+        config = ReportingConfig(
+            format="console",
+            telegram=TelegramConfig(
+                enabled=True,
+                bot_token="123456:ABC-DEF",
+                chat_id="-100123456",
+            ),
+        )
+        reporter = Reporter(config)
+
+        with patch("flight_monitor.reporter.requests.post") as mock_post:
+            mock_post.side_effect = ConnectionError("Network unreachable")
+            # Should not raise
+            report = reporter.generate([deal], [offer], datetime(2026, 4, 15, 10, 0))
+            assert "BIO" in report
+
+    def test_telegram_message_format(self):
+        """Telegram message should contain deal details."""
+        deal, offer = _make_deal(price=79, airline="VY")
+        config = ReportingConfig(
+            format="console",
+            telegram=TelegramConfig(
+                enabled=True,
+                bot_token="tok",
+                chat_id="123",
+            ),
+        )
+        reporter = Reporter(config)
+
+        with patch("flight_monitor.reporter.requests.post") as mock_post:
+            mock_post.return_value = MagicMock(ok=True)
+            reporter.generate([deal], [offer], datetime(2026, 4, 15, 10, 0))
+            text = mock_post.call_args[1]["json"]["text"]
+            assert "BIO" in text
+            assert "BER" in text
+            assert "79" in text
+            assert "VY" in text
+            assert "Flight Deals" in text
+
+    def test_telegram_message_includes_booking_link(self):
+        """Telegram message should include booking link."""
+        deal, offer = _make_deal(deep_link="https://example.com/book")
+        config = ReportingConfig(
+            format="console",
+            telegram=TelegramConfig(enabled=True, bot_token="tok", chat_id="123"),
+        )
+        reporter = Reporter(config)
+
+        with patch("flight_monitor.reporter.requests.post") as mock_post:
+            mock_post.return_value = MagicMock(ok=True)
+            reporter.generate([deal], [offer], datetime(2026, 4, 15, 10, 0))
+            text = mock_post.call_args[1]["json"]["text"]
+            assert "https://example.com/book" in text
+
+    def test_telegram_historical_low_shown(self):
+        """Telegram message should flag historical lows."""
+        deal, offer = _make_deal(is_historical_low=True)
+        config = ReportingConfig(
+            format="console",
+            telegram=TelegramConfig(enabled=True, bot_token="tok", chat_id="123"),
+        )
+        reporter = Reporter(config)
+
+        with patch("flight_monitor.reporter.requests.post") as mock_post:
+            mock_post.return_value = MagicMock(ok=True)
+            reporter.generate([deal], [offer], datetime(2026, 4, 15, 10, 0))
+            text = mock_post.call_args[1]["json"]["text"]
+            assert "NEW LOW" in text
+
+    def test_telegram_also_works_with_html_format(self, tmp_path):
+        """Telegram notifications should fire regardless of report format."""
+        deal, offer = _make_deal()
+        output_path = str(tmp_path / "report.html")
+        config = ReportingConfig(
+            format="html",
+            html_output_path=output_path,
+            telegram=TelegramConfig(enabled=True, bot_token="tok", chat_id="123"),
+        )
+        reporter = Reporter(config)
+
+        with patch("flight_monitor.reporter.requests.post") as mock_post:
+            mock_post.return_value = MagicMock(ok=True)
+            reporter.generate([deal], [offer], datetime(2026, 4, 15, 10, 0))
+            mock_post.assert_called_once()

@@ -34,14 +34,17 @@ def _walk_and_interpolate(obj: object, lenient: bool = False) -> object:
     if isinstance(obj, str):
         return _interpolate_env_vars(obj, lenient=lenient)
     if isinstance(obj, dict):
-        # Use lenient mode for optional/disabled email section
-        for key in ("email",):
+        # Use lenient mode for optional/disabled notification sections
+        optional_keys = ("email", "telegram")
+        for key in optional_keys:
             if key in obj and isinstance(obj.get(key), dict):
                 enabled = obj[key].get("enabled", False)
-                email_lenient = True if not enabled else lenient
-                obj[key] = _walk_and_interpolate(obj[key], lenient=email_lenient)
+                section_lenient = True if not enabled else lenient
+                obj[key] = _walk_and_interpolate(obj[key], lenient=section_lenient)
         return {
-            k: _walk_and_interpolate(v, lenient=lenient) if k not in ("email",) else obj[k]
+            k: _walk_and_interpolate(v, lenient=lenient)
+            if k not in optional_keys
+            else obj[k]
             for k, v in obj.items()
         }
     if isinstance(obj, list):
@@ -109,10 +112,17 @@ class EmailConfig(BaseModel):
     recipients: list[str] = Field(default_factory=list)
 
 
+class TelegramConfig(BaseModel):
+    enabled: bool = False
+    bot_token: str = ""
+    chat_id: str = ""
+
+
 class ReportingConfig(BaseModel):
     format: str = "console"
     html_output_path: str = "/tmp/flight_deals_report.html"
     email: EmailConfig = Field(default_factory=EmailConfig)
+    telegram: TelegramConfig = Field(default_factory=TelegramConfig)
 
 
 class AppConfig(BaseModel):

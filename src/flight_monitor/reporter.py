@@ -1,4 +1,4 @@
-"""Report generation for flight deals (console and HTML)."""
+"""Report generation for flight deals (console, HTML, and Telegram)."""
 
 from __future__ import annotations
 
@@ -9,6 +9,8 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from html import escape
 from pathlib import Path
+
+import requests
 
 from flight_monitor.config import ReportingConfig
 from flight_monitor.models import Deal, FlightOffer
@@ -36,8 +38,13 @@ class Reporter:
             logger.info("HTML report written to %s", path)
             if self._config.email.enabled and deals:
                 self._send_email(report, run_timestamp)
-            return report
-        return self._generate_console(deals, all_offers, run_timestamp)
+        else:
+            report = self._generate_console(deals, all_offers, run_timestamp)
+
+        if self._config.telegram.enabled and deals:
+            self._send_telegram(deals)
+
+        return report
 
     def _generate_console(
         self,
@@ -146,3 +153,41 @@ class Reporter:
             logger.info("Email sent to %s", cfg.recipients)
         except Exception:
             logger.exception("Failed to send email")
+
+    def _send_telegram(self, deals: list[Deal]) -> None:
+        """Send deal summary to Telegram via Bot API."""
+        cfg = self._config.telegram
+        text = self._format_telegram(deals)
+        url = f"https://api.telegram.org/bot{cfg.bot_token}/sendMessage"
+        try:
+            resp = requests.post(
+                url,
+                json={"chat_id": cfg.chat_id, "text": text, "parse_mode": "Markdown"},
+                timeout=15,
+            )
+            if resp.ok:
+                logger.info("Telegram message sent to chat %s", cfg.chat_id)
+            else:
+                logger.warning("Telegram API returned %s: %s", resp.status_code, resp.text[:200])
+        except Exception:
+            logger.exception("Failed to send Telegram message")
+
+    @staticmethod
+    def _format_telegram(deals: list[Deal]) -> str:
+        """Format deals as a compact Telegram message."""
+        lines = [f"*Flight Deals* ({len(deals)} found)\n"]
+        for deal in deals[:10]:  # Cap at 10 to stay under Telegram limits
+            o = deal.offer
+            direct = "direct" if o.is_direct else f"{o.stops} stop"
+            low = " NEW LOW" if deal.is_historical_low else ""
+            lines.append(
+                f"  {o.origin.code} > {o.destination.code}"
+                f"  *{o.currency} {o.price}*  ({direct})"
+                f"  -{deal.savings_vs_avg_pct:.0f}%{low}"
+            )
+            airline = o.segments[0].airline if o.segments else ""
+            lines.append(f"  {o.departure_time:%b %d %H:%M}  {airline}")
+            if o.deep_link:
+                lines.append(f"  [Book]({o.deep_link})")
+            lines.append("")
+        return "\n".join(lines)
