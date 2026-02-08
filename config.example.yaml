@@ -48,6 +48,10 @@ filters:
 analysis:
   deal_threshold_pct: 25
   min_history_count: 3
+  # Only use the last N days of history for price averages.
+  # Useful for seasonal routes where old prices distort comparisons.
+  # Omit or set to null to use all available history.
+  # stats_lookback_days: 90
 
 storage:
   db_path: "~/.flight_monitor/prices.db"
@@ -64,3 +68,9 @@ reporting:
     sender: ""
     password: "${SMTP_PASSWORD}"
     recipients: []
+  # Telegram notifications (optional). Sends deal summaries to a Telegram chat.
+  # Create a bot via @BotFather and get the chat_id from @userinfobot.
+  telegram:
+    enabled: false
+    bot_token: "${TELEGRAM_BOT_TOKEN}"
+    chat_id: "${TELEGRAM_CHAT_ID}"
