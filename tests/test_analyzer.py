@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 from datetime import datetime
 from decimal import Decimal
 
@@ -12,6 +13,8 @@ from flight_monitor.config import AnalysisConfig, DestinationConfig
 from flight_monitor.models import Airport, FlightOffer, FlightSegment
 from flight_monitor.storage.database import PriceDatabase
 
+_counter = itertools.count()
+
 
 def _make_offer(
     origin: str = "BIO",
@@ -19,6 +22,7 @@ def _make_offer(
     price: float = 100.0,
     queried_at: datetime | None = None,
 ) -> FlightOffer:
+    uid = next(_counter)
     dep = datetime(2026, 4, 15, 10, 0)
     arr = datetime(2026, 4, 15, 13, 0)
     seg = FlightSegment(
@@ -32,7 +36,7 @@ def _make_offer(
     )
     offer = FlightOffer(
         provider="kiwi",
-        provider_id=f"test-{price}",
+        provider_id=f"test-{uid}",
         origin=seg.origin,
         destination=seg.destination,
         segments=[seg],

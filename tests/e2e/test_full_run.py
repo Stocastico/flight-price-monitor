@@ -391,3 +391,30 @@ class TestHistoryCycle:
         # Average has shifted down from first run's recorded prices
         # so deal detection depends on new average
         assert isinstance(deals2, list)
+
+
+class TestDeduplication:
+    """Verify that duplicate offers are not double-counted in the DB."""
+
+    @responses.activate
+    def test_two_runs_same_offers_not_duplicated(self, e2e_config_single: AppConfig):
+        """Running twice with same API response should not duplicate records."""
+        register_kiwi_routes({("BIO", "BER"): "kiwi_bio_ber.json"})
+
+        monitor1 = FlightMonitor(e2e_config_single)
+        monitor1.run()
+
+        db = PriceDatabase(e2e_config_single.storage.db_path)
+        count_after_first = db.get_route_stats_for_destination_group("BIO", ["BER"]).count
+        assert count_after_first == 3
+
+        # Second run with same fixture
+        responses.reset()
+        register_kiwi_routes({("BIO", "BER"): "kiwi_bio_ber.json"})
+
+        monitor2 = FlightMonitor(e2e_config_single)
+        monitor2.run()
+
+        count_after_second = db.get_route_stats_for_destination_group("BIO", ["BER"]).count
+        # Should still be 3 — duplicates ignored
+        assert count_after_second == 3

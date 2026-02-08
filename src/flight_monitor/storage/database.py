@@ -11,7 +11,7 @@ from pathlib import Path
 
 from flight_monitor.models import FlightOffer, RouteKey
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 CREATE_TABLES = """
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -37,6 +37,10 @@ CREATE INDEX IF NOT EXISTS idx_route
 
 CREATE INDEX IF NOT EXISTS idx_observed
     ON price_history(observed_at);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_provider_dedup
+    ON price_history(provider, provider_id)
+    WHERE provider_id != '';
 """
 
 
@@ -71,9 +75,24 @@ class PriceDatabase:
     def _init_db(self) -> None:
         with self._connect() as conn:
             conn.executescript(CREATE_TABLES)
+            row = conn.execute("SELECT MAX(version) AS v FROM schema_version").fetchone()
+            current = row["v"] if row and row["v"] else 0
+            if current < SCHEMA_VERSION:
+                self._migrate(conn, current)
+                conn.execute(
+                    "INSERT OR REPLACE INTO schema_version (version) VALUES (?)",
+                    (SCHEMA_VERSION,),
+                )
+
+    @staticmethod
+    def _migrate(conn: sqlite3.Connection, from_version: int) -> None:
+        """Apply incremental schema migrations."""
+        if from_version < 2:
+            # v2: add unique index for deduplication by (provider, provider_id)
             conn.execute(
-                "INSERT OR IGNORE INTO schema_version (version) VALUES (?)",
-                (SCHEMA_VERSION,),
+                """CREATE UNIQUE INDEX IF NOT EXISTS idx_provider_dedup
+                   ON price_history(provider, provider_id)
+                   WHERE provider_id != ''"""
             )
 
     @contextmanager
@@ -87,12 +106,16 @@ class PriceDatabase:
             conn.close()
 
     def record_offers(self, offers: list[FlightOffer]) -> int:
-        """Store a batch of flight offers. Returns count stored."""
+        """Store a batch of flight offers, skipping duplicates by provider_id.
+
+        Returns count of newly stored records (excludes duplicates).
+        """
+        stored = 0
         with self._connect() as conn:
             for offer in offers:
                 airline = offer.segments[0].airline if offer.segments else ""
-                conn.execute(
-                    """INSERT INTO price_history
+                cursor = conn.execute(
+                    """INSERT OR IGNORE INTO price_history
                        (route_origin, route_dest, price, currency, stops,
                         airline, departure_date, observed_at, provider, provider_id)
                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -109,7 +132,8 @@ class PriceDatabase:
                         offer.provider_id,
                     ),
                 )
-        return len(offers)
+                stored += cursor.rowcount
+        return stored
 
     def get_route_stats(
         self,

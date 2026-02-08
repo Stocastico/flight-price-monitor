@@ -269,3 +269,109 @@ class TestPriceDatabase:
         route = RouteKey(origin_code="BIO", destination_code="BER")
         stats = sample_db.get_route_stats(route)
         assert stats.last_observed is not None
+
+
+class TestDeduplication:
+    """Tests for offer deduplication by provider_id."""
+
+    def test_duplicate_provider_id_ignored(self, sample_db: PriceDatabase):
+        """Recording the same provider_id twice should only store one record."""
+        offer = _make_offer(price=100)
+        assert sample_db.record_offers([offer]) == 1
+        assert sample_db.record_offers([offer]) == 0
+
+        route = RouteKey(origin_code="BIO", destination_code="BER")
+        assert sample_db.get_route_stats(route).count == 1
+
+    def test_different_provider_ids_both_stored(self, sample_db: PriceDatabase):
+        """Two offers with different provider_ids should both be stored."""
+        offer1 = _make_offer(price=100)
+        offer2 = _make_offer(price=120)
+        assert sample_db.record_offers([offer1, offer2]) == 2
+
+        route = RouteKey(origin_code="BIO", destination_code="BER")
+        assert sample_db.get_route_stats(route).count == 2
+
+    def test_empty_provider_id_always_inserts(self, sample_db: PriceDatabase):
+        """Offers with empty provider_id should always be inserted (no dedup)."""
+        dep = datetime(2026, 4, 15, 10, 0)
+        offer = FlightOffer(
+            provider="kiwi",
+            provider_id="",
+            origin=Airport(code="BIO"),
+            destination=Airport(code="BER"),
+            segments=[],
+            departure_time=dep,
+            arrival_time=dep.replace(hour=13),
+            total_duration_minutes=180,
+            stops=0,
+            price=Decimal("100"),
+            currency="EUR",
+        )
+        assert sample_db.record_offers([offer]) == 1
+        assert sample_db.record_offers([offer]) == 1
+
+        route = RouteKey(origin_code="BIO", destination_code="BER")
+        assert sample_db.get_route_stats(route).count == 2
+
+    def test_same_provider_id_different_providers_both_stored(self, sample_db: PriceDatabase):
+        """Same provider_id from different providers should not collide."""
+        dep = datetime(2026, 4, 15, 10, 0)
+        seg = FlightSegment(
+            airline="VY",
+            flight_number="VY123",
+            origin=Airport(code="BIO"),
+            destination=Airport(code="BER"),
+            departure_time=dep,
+            arrival_time=dep.replace(hour=13),
+            duration_minutes=180,
+        )
+        offer_kiwi = FlightOffer(
+            provider="kiwi",
+            provider_id="shared-id",
+            origin=seg.origin,
+            destination=seg.destination,
+            segments=[seg],
+            departure_time=dep,
+            arrival_time=dep.replace(hour=13),
+            total_duration_minutes=180,
+            stops=0,
+            price=Decimal("100"),
+            currency="EUR",
+        )
+        offer_amadeus = offer_kiwi.model_copy(update={"provider": "amadeus"})
+
+        assert sample_db.record_offers([offer_kiwi]) == 1
+        assert sample_db.record_offers([offer_amadeus]) == 1
+
+        route = RouteKey(origin_code="BIO", destination_code="BER")
+        assert sample_db.get_route_stats(route).count == 2
+
+    def test_batch_with_duplicates_returns_new_count(self, sample_db: PriceDatabase):
+        """A batch containing a duplicate should count only new inserts."""
+        offer_a = _make_offer(price=100)
+        offer_b = _make_offer(price=120)
+
+        assert sample_db.record_offers([offer_a]) == 1
+        # Batch: offer_a is duplicate, offer_b is new
+        assert sample_db.record_offers([offer_a, offer_b]) == 1
+
+        route = RouteKey(origin_code="BIO", destination_code="BER")
+        assert sample_db.get_route_stats(route).count == 2
+
+    def test_dedup_preserves_first_price(self, sample_db: PriceDatabase):
+        """First recorded price should be kept, duplicate ignored."""
+        import sqlite3
+
+        offer = _make_offer(price=100)
+        sample_db.record_offers([offer])
+
+        # "Updated" offer with different price but same provider_id
+        updated = offer.model_copy(update={"price": Decimal("50")})
+        sample_db.record_offers([updated])
+
+        conn = sqlite3.connect(str(sample_db._db_path))
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT price FROM price_history").fetchone()
+        conn.close()
+        assert row["price"] == 100.0
