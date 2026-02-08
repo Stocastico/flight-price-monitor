@@ -185,3 +185,24 @@ def watch(ctx: click.Context) -> None:
                 f"  {o.departure_time:%Y-%m-%d %H:%M}"
                 f"{price_alert}"
             )
+
+
+@cli.command()
+@click.option("--port", default=5555, help="Port to serve the dashboard on")
+@click.option("--host", default="127.0.0.1", help="Host to bind to")
+@click.pass_context
+def dashboard(ctx: click.Context, port: int, host: str) -> None:
+    """Launch a web dashboard showing price history charts."""
+    try:
+        from flight_monitor.dashboard import create_app
+    except ImportError:
+        click.echo(
+            "Flask is required for the dashboard. "
+            "Install with: pip install flight-monitor[dashboard]",
+            err=True,
+        )
+        sys.exit(1)
+
+    app = create_app(ctx.obj["config_path"])
+    click.echo(f"Dashboard running at http://{host}:{port}/")
+    app.run(host=host, port=port, debug=False)
