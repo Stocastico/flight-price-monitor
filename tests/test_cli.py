@@ -91,3 +91,67 @@ class TestPurgeCommand:
         result = runner.invoke(cli, ["-c", str(valid_config_file), "purge", "--days", "365"])
         assert result.exit_code == 0
         assert "Purged" in result.output
+
+    def test_purge_custom_days(self, runner: CliRunner, valid_config_file: Path):
+        result = runner.invoke(cli, ["-c", str(valid_config_file), "purge", "--days", "30"])
+        assert result.exit_code == 0
+        assert "30 days" in result.output
+
+    def test_purge_default_days(self, runner: CliRunner, valid_config_file: Path):
+        result = runner.invoke(cli, ["-c", str(valid_config_file), "purge"])
+        assert result.exit_code == 0
+        assert "365 days" in result.output
+
+
+class TestVerboseFlag:
+    def test_verbose_flag_accepted(self, runner: CliRunner, valid_config_file: Path):
+        """--verbose flag should be accepted before subcommand."""
+        result = runner.invoke(cli, ["-c", str(valid_config_file), "--verbose", "validate"])
+        assert result.exit_code == 0
+
+    def test_short_verbose_flag(self, runner: CliRunner, valid_config_file: Path):
+        """Short -v flag should work."""
+        result = runner.invoke(cli, ["-c", str(valid_config_file), "-v", "validate"])
+        assert result.exit_code == 0
+
+
+class TestValidateCommandExtended:
+    def test_validate_shows_route_count(self, runner: CliRunner, valid_config_file: Path):
+        """Validate should display the number of route pairs."""
+        result = runner.invoke(cli, ["-c", str(valid_config_file), "validate"])
+        assert result.exit_code == 0
+        assert "Routes:" in result.output
+
+    def test_validate_shows_origins(self, runner: CliRunner, valid_config_file: Path):
+        result = runner.invoke(cli, ["-c", str(valid_config_file), "validate"])
+        assert "BIO" in result.output
+
+    def test_validate_shows_destinations(self, runner: CliRunner, valid_config_file: Path):
+        result = runner.invoke(cli, ["-c", str(valid_config_file), "validate"])
+        assert "Berlin" in result.output or "BER" in result.output
+
+
+class TestRunCommandExtended:
+    @patch("flight_monitor.cli.FlightMonitor")
+    def test_run_with_multiple_deals(
+        self, mock_monitor_cls, runner: CliRunner, valid_config_file: Path
+    ):
+        mock_instance = MagicMock()
+        mock_instance.run.return_value = (["deal1", "deal2", "deal3"], "3 deals report")
+        mock_monitor_cls.return_value = mock_instance
+
+        result = runner.invoke(cli, ["-c", str(valid_config_file), "run"])
+        assert result.exit_code == 0
+        assert "3 deal(s) found" in result.output
+
+    @patch("flight_monitor.cli.FlightMonitor")
+    def test_run_console_format_echoes_report(
+        self, mock_monitor_cls, runner: CliRunner, valid_config_file: Path
+    ):
+        """Console format should echo the full report."""
+        mock_instance = MagicMock()
+        mock_instance.run.return_value = (["deal1"], "=== Flight Monitor Report ===")
+        mock_monitor_cls.return_value = mock_instance
+
+        result = runner.invoke(cli, ["-c", str(valid_config_file), "run"])
+        assert "Flight Monitor Report" in result.output

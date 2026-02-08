@@ -143,3 +143,129 @@ class TestPriceDatabase:
         )
         assert stats.count == 0
         assert stats.avg_price == Decimal("0")
+
+    def test_record_empty_offers_list(self, sample_db: PriceDatabase):
+        """Recording empty list should succeed and return 0."""
+        count = sample_db.record_offers([])
+        assert count == 0
+
+    def test_record_offer_with_no_segments(self, sample_db: PriceDatabase):
+        """Offer with empty segments list should record airline as ''."""
+        dep = datetime(2026, 4, 15, 10, 0)
+        offer = FlightOffer(
+            provider="kiwi",
+            provider_id="no-seg",
+            origin=Airport(code="BIO"),
+            destination=Airport(code="BER"),
+            segments=[],
+            departure_time=dep,
+            arrival_time=dep.replace(hour=13),
+            total_duration_minutes=180,
+            stops=0,
+            price=Decimal("100"),
+            currency="EUR",
+        )
+        count = sample_db.record_offers([offer])
+        assert count == 1
+
+        route = RouteKey(origin_code="BIO", destination_code="BER")
+        stats = sample_db.get_route_stats(route)
+        assert stats.count == 1
+
+    def test_schema_reinitialization(self, tmp_path):
+        """Creating PriceDatabase twice on same path should not error."""
+        db_path = tmp_path / "test.db"
+        db1 = PriceDatabase(db_path)
+        db1.record_offers([_make_offer(price=100)])
+
+        # Re-open same database
+        db2 = PriceDatabase(db_path)
+        route = RouteKey(origin_code="BIO", destination_code="BER")
+        stats = db2.get_route_stats(route)
+        assert stats.count == 1
+
+    def test_destination_group_with_max_stops(self, sample_db: PriceDatabase):
+        """Group stats should filter by max_stops."""
+        offers = [
+            _make_offer(destination="LHR", price=100, stops=0),
+            _make_offer(destination="LGW", price=200, stops=1),
+            _make_offer(destination="STN", price=300, stops=2),
+        ]
+        sample_db.record_offers(offers)
+
+        stats = sample_db.get_route_stats_for_destination_group(
+            origin_code="BIO",
+            destination_codes=["LHR", "LGW", "STN"],
+            max_stops=0,
+        )
+        assert stats.count == 1
+        assert stats.avg_price == Decimal("100.0")
+
+    def test_destination_group_no_matching_records(self, sample_db: PriceDatabase):
+        """Group stats with codes that have no records."""
+        stats = sample_db.get_route_stats_for_destination_group(
+            origin_code="BIO",
+            destination_codes=["ZZZ", "YYY"],
+        )
+        assert stats.count == 0
+        assert stats.avg_price == Decimal("0")
+
+    def test_record_preserves_provider_info(self, sample_db: PriceDatabase):
+        """Recorded offers should store provider and provider_id."""
+        import sqlite3
+
+        offer = _make_offer(price=100)
+        sample_db.record_offers([offer])
+
+        conn = sqlite3.connect(str(sample_db._db_path))
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT provider, provider_id FROM price_history").fetchone()
+        conn.close()
+        assert row["provider"] == "kiwi"
+        assert "100" in row["provider_id"]
+
+    def test_purge_preserves_recent_records(self, sample_db: PriceDatabase):
+        """Purge should not touch records newer than cutoff."""
+        recent_time = datetime.now(UTC) - timedelta(days=10)
+        offers = [_make_offer(price=p, queried_at=recent_time) for p in [100, 120, 80]]
+        sample_db.record_offers(offers)
+
+        removed = sample_db.purge_old_records(older_than_days=365)
+        assert removed == 0
+
+        route = RouteKey(origin_code="BIO", destination_code="BER")
+        assert sample_db.get_route_stats(route).count == 3
+
+    def test_purge_custom_days(self, sample_db: PriceDatabase):
+        """Purge with custom days threshold."""
+        old_time = datetime.now(UTC) - timedelta(days=50)
+        sample_db.record_offers([_make_offer(price=100, queried_at=old_time)])
+        sample_db.record_offers([_make_offer(price=120)])
+
+        removed = sample_db.purge_old_records(older_than_days=30)
+        assert removed == 1
+
+    def test_multiple_routes_separate_stats(self, sample_db: PriceDatabase):
+        """Stats for different routes should be independent."""
+        sample_db.record_offers([
+            _make_offer(origin="BIO", destination="BER", price=100),
+            _make_offer(origin="BIO", destination="LHR", price=200),
+        ])
+
+        ber_stats = sample_db.get_route_stats(
+            RouteKey(origin_code="BIO", destination_code="BER")
+        )
+        lhr_stats = sample_db.get_route_stats(
+            RouteKey(origin_code="BIO", destination_code="LHR")
+        )
+        assert ber_stats.count == 1
+        assert ber_stats.avg_price == Decimal("100.0")
+        assert lhr_stats.count == 1
+        assert lhr_stats.avg_price == Decimal("200.0")
+
+    def test_route_stats_last_observed(self, sample_db: PriceDatabase):
+        """Stats should include last_observed timestamp."""
+        sample_db.record_offers([_make_offer(price=100)])
+        route = RouteKey(origin_code="BIO", destination_code="BER")
+        stats = sample_db.get_route_stats(route)
+        assert stats.last_observed is not None

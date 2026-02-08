@@ -200,3 +200,176 @@ class TestFlightFilter:
         config = FiltersConfig()
         flt = FlightFilter(config)
         assert flt.apply([]) == []
+
+    def test_departure_at_exact_earliest_boundary(self):
+        """Departure exactly at earliest should pass."""
+        config = FiltersConfig(
+            departure_time_earliest="08:00",
+            departure_time_latest="18:00",
+        )
+        flt = FlightFilter(config)
+        offers = [_make_offer(departure_hour=8)]
+        result = flt.apply(offers)
+        assert len(result) == 1
+
+    def test_departure_at_exact_latest_boundary(self):
+        """Departure exactly at latest should pass."""
+        config = FiltersConfig(
+            departure_time_earliest="08:00",
+            departure_time_latest="18:00",
+        )
+        flt = FlightFilter(config)
+        offers = [_make_offer(departure_hour=18)]
+        result = flt.apply(offers)
+        assert len(result) == 1
+
+    def test_duration_exactly_at_max(self):
+        """Duration exactly at max should pass."""
+        config = FiltersConfig(max_duration_minutes=180)
+        flt = FlightFilter(config)
+        offers = [_make_offer(duration_minutes=180)]
+        result = flt.apply(offers)
+        assert len(result) == 1
+
+    def test_duration_one_over_max(self):
+        """Duration one minute over should be rejected."""
+        config = FiltersConfig(max_duration_minutes=180)
+        flt = FlightFilter(config)
+        offers = [_make_offer(duration_minutes=181)]
+        result = flt.apply(offers)
+        assert len(result) == 0
+
+    def test_stops_exactly_at_max(self):
+        """Stops exactly at max should pass."""
+        config = FiltersConfig(max_stops=1)
+        flt = FlightFilter(config)
+        offers = [_make_offer(stops=1, price=100)]
+        result = flt.apply(offers)
+        assert len(result) == 1
+
+    def test_both_allowed_and_excluded_airlines(self):
+        """Allowed + excluded: allowed takes precedence, then excluded filters."""
+        config = FiltersConfig(allowed_airlines=["VY", "IB"], excluded_airlines=["IB"])
+        flt = FlightFilter(config)
+        offers = [
+            _make_offer(airline="VY"),
+            _make_offer(airline="IB"),
+            _make_offer(airline="FR"),
+        ]
+        result = flt.apply(offers)
+        # VY is allowed and not excluded; IB is allowed but also excluded; FR not allowed
+        assert len(result) == 1
+        assert result[0].segments[0].airline == "VY"
+
+    def test_mixed_airlines_on_connecting_flight(self):
+        """Connecting flight with different airlines per segment."""
+        config = FiltersConfig(allowed_airlines=["IB"], max_stops=1)
+        flt = FlightFilter(config)
+
+        # Build a connecting offer with IB on first leg, VY on second
+        dep = datetime(2026, 4, 15, 10, 0)
+        seg1 = FlightSegment(
+            airline="IB",
+            flight_number="IB100",
+            origin=Airport(code="BIO"),
+            destination=Airport(code="MAD"),
+            departure_time=dep,
+            arrival_time=datetime(2026, 4, 15, 11, 15),
+            duration_minutes=75,
+        )
+        seg2 = FlightSegment(
+            airline="VY",
+            flight_number="VY200",
+            origin=Airport(code="MAD"),
+            destination=Airport(code="BER"),
+            departure_time=datetime(2026, 4, 15, 13, 0),
+            arrival_time=datetime(2026, 4, 15, 16, 0),
+            duration_minutes=180,
+        )
+        mixed_offer = FlightOffer(
+            provider="kiwi",
+            provider_id="mixed-1",
+            origin=Airport(code="BIO"),
+            destination=Airport(code="BER"),
+            segments=[seg1, seg2],
+            departure_time=dep,
+            arrival_time=datetime(2026, 4, 15, 16, 0),
+            total_duration_minutes=360,
+            stops=1,
+            price=Decimal("120.00"),
+            currency="EUR",
+        )
+        result = flt.apply([mixed_offer])
+        # offer_airlines = {"IB", "VY"}, allowed = {"IB"}, intersection is {"IB"} -> passes allowed
+        assert len(result) == 1
+
+    def test_excluded_airline_on_any_segment_filters_out(self):
+        """If any segment airline is excluded, the whole offer is filtered."""
+        config = FiltersConfig(excluded_airlines=["VY"], max_stops=1)
+        flt = FlightFilter(config)
+
+        dep = datetime(2026, 4, 15, 10, 0)
+        seg1 = FlightSegment(
+            airline="IB",
+            flight_number="IB100",
+            origin=Airport(code="BIO"),
+            destination=Airport(code="MAD"),
+            departure_time=dep,
+            arrival_time=datetime(2026, 4, 15, 11, 15),
+            duration_minutes=75,
+        )
+        seg2 = FlightSegment(
+            airline="VY",
+            flight_number="VY200",
+            origin=Airport(code="MAD"),
+            destination=Airport(code="BER"),
+            departure_time=datetime(2026, 4, 15, 13, 0),
+            arrival_time=datetime(2026, 4, 15, 16, 0),
+            duration_minutes=180,
+        )
+        offer = FlightOffer(
+            provider="kiwi",
+            provider_id="mixed-1",
+            origin=Airport(code="BIO"),
+            destination=Airport(code="BER"),
+            segments=[seg1, seg2],
+            departure_time=dep,
+            arrival_time=datetime(2026, 4, 15, 16, 0),
+            total_duration_minutes=360,
+            stops=1,
+            price=Decimal("120.00"),
+            currency="EUR",
+        )
+        result = flt.apply([offer])
+        assert len(result) == 0
+
+    def test_no_airline_filters_passes_all(self):
+        """With no allowed/excluded, all airlines pass."""
+        config = FiltersConfig()
+        flt = FlightFilter(config)
+        offers = [
+            _make_offer(airline="VY"),
+            _make_offer(airline="FR"),
+            _make_offer(airline="IB"),
+        ]
+        result = flt.apply(offers)
+        assert len(result) == 3
+
+    def test_all_offers_filtered_out(self):
+        """When every offer fails filters."""
+        config = FiltersConfig(max_stops=0)
+        flt = FlightFilter(config)
+        offers = [
+            _make_offer(stops=1, price=50),
+            _make_offer(stops=1, price=80),
+        ]
+        result = flt.apply(offers)
+        assert len(result) == 0
+
+    def test_single_offer_passes(self):
+        """Single offer that passes all filters."""
+        config = FiltersConfig()
+        flt = FlightFilter(config)
+        offers = [_make_offer()]
+        result = flt.apply(offers)
+        assert len(result) == 1

@@ -217,3 +217,210 @@ class TestKiwiProvider:
 
         assert len(offers) == 1
         assert offers[0].provider_id == "good-offer"
+
+    @responses.activate
+    def test_search_network_error(self, provider: KiwiProvider):
+        """Network error should raise ProviderError with no status code."""
+        import requests
+
+        responses.add(
+            responses.GET,
+            f"{KIWI_BASE_URL}/v2/search",
+            body=requests.ConnectionError("Connection refused"),
+        )
+
+        with pytest.raises(ProviderError) as exc_info:
+            provider.search_flights(
+                origin="BIO",
+                destination="BER",
+                date_from=date(2026, 4, 1),
+                date_to=date(2026, 6, 30),
+            )
+
+        assert exc_info.value.status_code is None
+        assert exc_info.value.provider == "kiwi"
+
+    @responses.activate
+    def test_search_timeout_error(self, provider: KiwiProvider):
+        """Timeout should raise ProviderError."""
+        import requests
+
+        responses.add(
+            responses.GET,
+            f"{KIWI_BASE_URL}/v2/search",
+            body=requests.Timeout("Request timed out"),
+        )
+
+        with pytest.raises(ProviderError) as exc_info:
+            provider.search_flights(
+                origin="BIO",
+                destination="BER",
+                date_from=date(2026, 4, 1),
+                date_to=date(2026, 6, 30),
+            )
+
+        assert exc_info.value.status_code is None
+
+    @responses.activate
+    def test_search_500_error(self, provider: KiwiProvider):
+        responses.add(
+            responses.GET,
+            f"{KIWI_BASE_URL}/v2/search",
+            json={"error": "Internal Server Error"},
+            status=500,
+        )
+
+        with pytest.raises(ProviderError) as exc_info:
+            provider.search_flights(
+                origin="BIO",
+                destination="BER",
+                date_from=date(2026, 4, 1),
+                date_to=date(2026, 6, 30),
+            )
+
+        assert exc_info.value.status_code == 500
+
+    @responses.activate
+    def test_search_with_custom_parameters(self, provider: KiwiProvider):
+        """Verify all parameters are passed to the API."""
+        responses.add(
+            responses.GET,
+            f"{KIWI_BASE_URL}/v2/search",
+            json={"data": []},
+            status=200,
+        )
+
+        provider.search_flights(
+            origin="BIO",
+            destination="BER,BGY",
+            date_from=date(2026, 4, 1),
+            date_to=date(2026, 6, 30),
+            adults=2,
+            currency="USD",
+            max_stopovers=2,
+            max_results=100,
+        )
+
+        request = responses.calls[0].request
+        assert "adults=2" in request.url
+        assert "curr=USD" in request.url
+        assert "max_stopovers=2" in request.url
+        assert "limit=100" in request.url
+        # Comma-separated destinations
+        assert "fly_to=BER%2CBGY" in request.url or "fly_to=BER,BGY" in request.url
+
+    @responses.activate
+    def test_search_empty_route_in_offer(self, provider: KiwiProvider):
+        """Offer with empty route list should be skipped (IndexError caught)."""
+        responses.add(
+            responses.GET,
+            f"{KIWI_BASE_URL}/v2/search",
+            json={
+                "data": [
+                    {
+                        "id": "empty-route",
+                        "price": 50,
+                        "route": [],
+                    },
+                ]
+            },
+            status=200,
+        )
+
+        offers = provider.search_flights(
+            origin="BIO",
+            destination="BER",
+            date_from=date(2026, 4, 1),
+            date_to=date(2026, 6, 30),
+        )
+
+        assert offers == []
+
+    @responses.activate
+    def test_search_missing_optional_fields(self, provider: KiwiProvider):
+        """Offer without deep_link and optional city fields should still parse."""
+        responses.add(
+            responses.GET,
+            f"{KIWI_BASE_URL}/v2/search",
+            json={
+                "data": [
+                    {
+                        "id": "minimal-offer",
+                        "price": 60,
+                        "route": [
+                            {
+                                "airline": "FR",
+                                "flight_no": 100,
+                                "flyFrom": "BIO",
+                                "flyTo": "BGY",
+                                "local_departure": "2026-04-20T06:30:00",
+                                "local_arrival": "2026-04-20T08:45:00",
+                            }
+                        ],
+                    }
+                ]
+            },
+            status=200,
+        )
+
+        offers = provider.search_flights(
+            origin="BIO",
+            destination="BGY",
+            date_from=date(2026, 4, 1),
+            date_to=date(2026, 6, 30),
+        )
+
+        assert len(offers) == 1
+        assert offers[0].deep_link == ""
+        assert offers[0].segments[0].origin.city == ""
+
+    @responses.activate
+    def test_search_response_without_data_key(self, provider: KiwiProvider):
+        """Response missing 'data' key should return empty list."""
+        responses.add(
+            responses.GET,
+            f"{KIWI_BASE_URL}/v2/search",
+            json={"search_id": "123"},
+            status=200,
+        )
+
+        offers = provider.search_flights(
+            origin="BIO",
+            destination="BER",
+            date_from=date(2026, 4, 1),
+            date_to=date(2026, 6, 30),
+        )
+
+        assert offers == []
+
+    def test_parse_offer_third_offer_in_fixture(self, kiwi_response_data):
+        """Parse the third offer (BIO->BGY direct) from fixture."""
+        item = kiwi_response_data["data"][2]
+        offer = KiwiProvider._parse_offer(item, "EUR")
+        assert offer.origin.code == "BIO"
+        assert offer.destination.code == "BGY"
+        assert offer.price == Decimal("52")
+        assert offer.stops == 0
+
+    def test_provider_sets_api_key_header(self):
+        """Verify API key is set in the session headers."""
+        provider = KiwiProvider(api_key="my-secret-key")
+        assert provider._session.headers["apikey"] == "my-secret-key"
+
+
+class TestParseKiwiDatetimeExtended:
+    def test_parse_with_explicit_timezone_offset(self):
+        dt = _parse_kiwi_datetime("2026-04-15T10:30:00+02:00")
+        assert dt.hour == 10
+        assert dt.minute == 30
+        assert dt.tzinfo is not None
+
+    def test_parse_with_negative_timezone_offset(self):
+        dt = _parse_kiwi_datetime("2026-04-15T10:30:00-05:00")
+        assert dt.hour == 10
+        assert dt.tzinfo is not None
+
+    def test_parse_midnight(self):
+        dt = _parse_kiwi_datetime("2026-04-15T00:00:00.000Z")
+        assert dt.hour == 0
+        assert dt.minute == 0

@@ -152,3 +152,109 @@ class TestPriceAnalyzer:
         assert len(deals) == 3
         assert deals[0].savings_vs_avg_pct > deals[1].savings_vs_avg_pct
         assert deals[1].savings_vs_avg_pct > deals[2].savings_vs_avg_pct
+
+    def test_empty_offers_list(self, db, dest_config):
+        """No offers should produce no deals."""
+        self._seed_history(db, [200, 200, 200])
+        config = AnalysisConfig(deal_threshold_pct=25, min_history_count=3)
+        analyzer = PriceAnalyzer(config, db)
+
+        deals = analyzer.find_deals([], dest_config)
+        assert deals == []
+
+    def test_avg_price_zero_skipped(self, db, dest_config):
+        """Offers with zero average price in history should be skipped (no div by zero)."""
+        # Seed with zero-price records
+        self._seed_history(db, [0, 0, 0])
+        config = AnalysisConfig(deal_threshold_pct=25, min_history_count=3)
+        analyzer = PriceAnalyzer(config, db)
+
+        offer = _make_offer(price=50)
+        deals = analyzer.find_deals([offer], dest_config)
+        assert deals == []
+
+    def test_exact_threshold_boundary(self, db, dest_config):
+        """Price exactly at threshold percentage should be a deal."""
+        # avg = 200, price = 150 => savings = 25% exactly
+        self._seed_history(db, [200, 200, 200])
+        config = AnalysisConfig(deal_threshold_pct=25, min_history_count=3)
+        analyzer = PriceAnalyzer(config, db)
+
+        offer = _make_offer(price=150)
+        deals = analyzer.find_deals([offer], dest_config)
+        assert len(deals) == 1
+        assert deals[0].savings_vs_avg_pct == 25.0
+
+    def test_just_below_threshold(self, db, dest_config):
+        """Price just below threshold should not be a deal."""
+        # avg = 200, price = 151 => savings = 24.5%
+        self._seed_history(db, [200, 200, 200])
+        config = AnalysisConfig(deal_threshold_pct=25, min_history_count=3)
+        analyzer = PriceAnalyzer(config, db)
+
+        offer = _make_offer(price=151)
+        deals = analyzer.find_deals([offer], dest_config)
+        assert deals == []
+
+    def test_multiple_offers_different_routes(self, db):
+        """Analyzer handles offers going to different destinations."""
+        # Seed BIO->BER with history
+        ber_offers = [_make_offer(destination="BER", price=p) for p in [200, 200, 200]]
+        db.record_offers(ber_offers)
+        # Seed BIO->BGY with history
+        bgy_offers = [_make_offer(destination="BGY", price=p) for p in [100, 100, 100]]
+        db.record_offers(bgy_offers)
+
+        dest_config = DestinationConfig(name="Multi", airports=["BER", "BGY"])
+        config = AnalysisConfig(deal_threshold_pct=25, min_history_count=3)
+        analyzer = PriceAnalyzer(config, db)
+
+        offers = [
+            _make_offer(destination="BER", price=100),  # 50% below BER avg
+            _make_offer(destination="BGY", price=90),  # 10% below BGY avg
+        ]
+        deals = analyzer.find_deals(offers, dest_config)
+        # Only BER deal should qualify (50% >= 25%)
+        assert len(deals) == 1
+        assert deals[0].offer.destination.code == "BER"
+
+    def test_deal_savings_abs_calculated(self, db, dest_config):
+        """savings_vs_avg_abs should be avg - price."""
+        self._seed_history(db, [200, 200, 200])
+        config = AnalysisConfig(deal_threshold_pct=10, min_history_count=3)
+        analyzer = PriceAnalyzer(config, db)
+
+        offer = _make_offer(price=100)
+        deals = analyzer.find_deals([offer], dest_config)
+        assert len(deals) == 1
+        assert deals[0].savings_vs_avg_abs == Decimal("100.0")
+
+    def test_min_history_count_one(self, db, dest_config):
+        """With min_history_count=1, even a single record is enough."""
+        self._seed_history(db, [200])
+        config = AnalysisConfig(deal_threshold_pct=25, min_history_count=1)
+        analyzer = PriceAnalyzer(config, db)
+
+        offer = _make_offer(price=100)
+        deals = analyzer.find_deals([offer], dest_config)
+        assert len(deals) == 1
+
+    def test_no_history_no_fallback(self, db):
+        """No history at all (route or group) -> no deals."""
+        dest_config = DestinationConfig(name="Unknown", airports=["ZZZ"])
+        config = AnalysisConfig(deal_threshold_pct=25, min_history_count=3)
+        analyzer = PriceAnalyzer(config, db)
+
+        offer = _make_offer(destination="ZZZ", price=10)
+        deals = analyzer.find_deals([offer], dest_config)
+        assert deals == []
+
+    def test_historical_count_in_deal(self, db, dest_config):
+        """Deal should contain the correct historical count."""
+        self._seed_history(db, [200, 200, 200, 200, 200])
+        config = AnalysisConfig(deal_threshold_pct=25, min_history_count=3)
+        analyzer = PriceAnalyzer(config, db)
+
+        offer = _make_offer(price=100)
+        deals = analyzer.find_deals([offer], dest_config)
+        assert deals[0].historical_count == 5

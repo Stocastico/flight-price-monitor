@@ -38,8 +38,8 @@ def _walk_and_interpolate(obj: object, lenient: bool = False) -> object:
         for key in ("email",):
             if key in obj and isinstance(obj.get(key), dict):
                 enabled = obj[key].get("enabled", False)
-                if not enabled:
-                    obj[key] = _walk_and_interpolate(obj[key], lenient=True)
+                email_lenient = True if not enabled else lenient
+                obj[key] = _walk_and_interpolate(obj[key], lenient=email_lenient)
         return {
             k: _walk_and_interpolate(v, lenient=lenient) if k not in ("email",) else obj[k]
             for k, v in obj.items()
