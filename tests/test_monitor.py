@@ -6,7 +6,7 @@ from datetime import datetime
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
-from flight_monitor.config import AppConfig, DestinationConfig
+from flight_monitor.config import AppConfig, DestinationConfig, SearchConfig
 from flight_monitor.models import Airport, FlightOffer, FlightSegment
 from flight_monitor.monitor import FlightMonitor
 from flight_monitor.providers.base import ProviderError
@@ -243,3 +243,44 @@ class TestFlightMonitor:
         for call_offers in record_calls:
             for offer in call_offers:
                 assert offer.departure_time.hour != 3
+
+
+class TestFlexibleDates:
+    @patch("flight_monitor.monitor.create_provider")
+    def test_target_dates_produce_multiple_windows(
+        self, mock_factory, sample_config: AppConfig
+    ):
+        """With target_dates set, search is called once per window per route."""
+        mock_provider = MagicMock()
+        mock_provider.name.return_value = "kiwi"
+        mock_provider.search_flights.return_value = []
+        mock_factory.return_value = mock_provider
+
+        sample_config.search = SearchConfig(
+            target_dates=["2026-06-15", "2026-08-01"],
+            date_flex_days=2,
+        )
+
+        monitor = FlightMonitor(sample_config)
+        monitor.run()
+
+        # 2 origins x 2 destinations x 2 target dates = 8 searches
+        assert mock_provider.search_flights.call_count == 8
+
+    @patch("flight_monitor.monitor.create_provider")
+    def test_no_target_dates_uses_full_range(
+        self, mock_factory, sample_config: AppConfig
+    ):
+        """Without target_dates, uses the default date_range_days window."""
+        mock_provider = MagicMock()
+        mock_provider.name.return_value = "kiwi"
+        mock_provider.search_flights.return_value = []
+        mock_factory.return_value = mock_provider
+
+        sample_config.search = SearchConfig(target_dates=[])
+
+        monitor = FlightMonitor(sample_config)
+        monitor.run()
+
+        # 2 origins x 2 destinations x 1 window = 4 searches
+        assert mock_provider.search_flights.call_count == 4

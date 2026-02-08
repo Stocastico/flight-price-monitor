@@ -38,6 +38,10 @@ search:
   # Round-trip options (only used when flight_type: round)
   nights_min: 2   # Minimum nights at destination
   nights_max: 7   # Maximum nights at destination
+  # Flexible dates: search around specific target dates instead of a full range.
+  # Each date is searched +/- date_flex_days. Leave empty to use date_range_days.
+  target_dates: []  # e.g. ["2026-06-15", "2026-08-01"]
+  date_flex_days: 3
 
 filters:
   prefer_direct: true

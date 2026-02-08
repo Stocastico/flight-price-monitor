@@ -84,6 +84,8 @@ class SearchConfig(BaseModel):
     max_results_per_route: int = 50
     nights_min: int = 2
     nights_max: int = 7
+    target_dates: list[str] = Field(default_factory=list)
+    date_flex_days: int = 3
 
 
 class FiltersConfig(BaseModel):

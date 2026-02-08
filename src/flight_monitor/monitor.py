@@ -28,14 +28,33 @@ class FlightMonitor:
         self._analyzer = PriceAnalyzer(config.analysis, self._db)
         self._reporter = Reporter(config.reporting)
 
+    def _get_date_windows(self) -> list[tuple[date, date]]:
+        """Compute search date windows from config.
+
+        If target_dates is set, returns one window per target date
+        (target +/- date_flex_days). Otherwise, returns a single
+        window from today to today + date_range_days.
+        """
+        today = datetime.now(UTC).date()
+        if self._config.search.target_dates:
+            flex = self._config.search.date_flex_days
+            windows = []
+            for td in self._config.search.target_dates:
+                target = date.fromisoformat(td)
+                windows.append((
+                    max(target - timedelta(days=flex), today),
+                    target + timedelta(days=flex),
+                ))
+            return windows
+        return [(today, today + timedelta(days=self._config.search.date_range_days))]
+
     def run(self) -> tuple[list[Deal], str]:
         """Execute a full monitoring cycle.
 
         Returns (deals_found, report_text).
         """
         run_time = datetime.now(UTC)
-        date_from = datetime.now(UTC).date()
-        date_to = date_from + timedelta(days=self._config.search.date_range_days)
+        windows = self._get_date_windows()
 
         all_offers: list[FlightOffer] = []
         all_deals: list[Deal] = []
@@ -48,12 +67,16 @@ class FlightMonitor:
                     dest.name,
                     ",".join(dest.airports),
                 )
-                route_offers = self._search_route(
-                    origin_code=origin.code,
-                    destination_codes=dest.airports,
-                    date_from=date_from,
-                    date_to=date_to,
-                )
+                route_offers: list[FlightOffer] = []
+                for date_from, date_to in windows:
+                    route_offers.extend(
+                        self._search_route(
+                            origin_code=origin.code,
+                            destination_codes=dest.airports,
+                            date_from=date_from,
+                            date_to=date_to,
+                        )
+                    )
                 logger.info("  Found %d offers", len(route_offers))
 
                 filtered = self._filter.apply(route_offers)
