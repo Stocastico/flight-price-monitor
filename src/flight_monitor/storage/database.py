@@ -229,3 +229,47 @@ class PriceDatabase:
         with self._connect() as conn:
             cursor = conn.execute("DELETE FROM price_history WHERE observed_at < ?", (cutoff,))
             return cursor.rowcount
+
+    def get_all_routes(self) -> list[tuple[str, str]]:
+        """Return all distinct (origin, destination) pairs in the database."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT DISTINCT route_origin, route_dest FROM price_history "
+                "ORDER BY route_origin, route_dest"
+            ).fetchall()
+            return [(r["route_origin"], r["route_dest"]) for r in rows]
+
+    def get_price_trend(
+        self,
+        origin: str,
+        destination: str,
+        last_n_days: int = 90,
+    ) -> list[dict]:
+        """Return daily average prices for a route over the last N days.
+
+        Returns list of dicts with keys: date, avg_price, min_price, count.
+        """
+        cutoff = (datetime.now(UTC) - timedelta(days=last_n_days)).isoformat()
+        with self._connect() as conn:
+            rows = conn.execute(
+                """SELECT
+                       date(observed_at) AS obs_date,
+                       AVG(price) AS avg_price,
+                       MIN(price) AS min_price,
+                       COUNT(*) AS cnt
+                   FROM price_history
+                   WHERE route_origin = ? AND route_dest = ?
+                     AND observed_at >= ?
+                   GROUP BY obs_date
+                   ORDER BY obs_date""",
+                (origin, destination, cutoff),
+            ).fetchall()
+            return [
+                {
+                    "date": r["obs_date"],
+                    "avg_price": round(r["avg_price"], 2),
+                    "min_price": r["min_price"],
+                    "count": r["cnt"],
+                }
+                for r in rows
+            ]

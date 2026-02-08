@@ -9,6 +9,7 @@ from pathlib import Path
 import click
 
 from flight_monitor.config import load_config
+from flight_monitor.models import RouteKey
 from flight_monitor.monitor import FlightMonitor
 from flight_monitor.storage.database import PriceDatabase
 
@@ -80,3 +81,51 @@ def validate(ctx: click.Context) -> None:
     except Exception as e:
         click.echo(f"Configuration error: {e}", err=True)
         sys.exit(1)
+
+
+@cli.command()
+@click.option("--days", default=90, help="Show trends for the last N days")
+@click.option("--route", default=None, help="Filter to a specific route (e.g. BIO-BER)")
+@click.pass_context
+def trends(ctx: click.Context, days: int, route: str | None) -> None:
+    """Show historical price trends per route."""
+    config = load_config(ctx.obj["config_path"])
+    db = PriceDatabase(config.storage.db_path)
+
+    if route:
+        parts = route.upper().split("-")
+        if len(parts) != 2 or len(parts[0]) != 3 or len(parts[1]) != 3:
+            click.echo("Invalid route format. Use ORIGIN-DEST (e.g. BIO-BER)", err=True)
+            sys.exit(1)
+        routes = [(parts[0], parts[1])]
+    else:
+        routes = db.get_all_routes()
+
+    if not routes:
+        click.echo("No price history found.")
+        return
+
+    for origin, dest in routes:
+        stats = db.get_route_stats(
+            RouteKey(origin_code=origin, destination_code=dest)
+        )
+        if stats.count == 0:
+            continue
+
+        click.echo(f"\n{origin} -> {dest}  ({stats.count} records)")
+        click.echo(
+            f"  Avg: EUR {stats.avg_price}  "
+            f"Min: EUR {stats.min_price}  "
+            f"Max: EUR {stats.max_price}"
+        )
+
+        trend = db.get_price_trend(origin, dest, last_n_days=days)
+        if trend:
+            click.echo(f"  Last {days} days:")
+            for entry in trend:
+                click.echo(
+                    f"    {entry['date']}  "
+                    f"avg {entry['avg_price']:.0f}  "
+                    f"min {entry['min_price']:.0f}  "
+                    f"({entry['count']} offers)"
+                )

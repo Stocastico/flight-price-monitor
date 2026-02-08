@@ -375,3 +375,73 @@ class TestDeduplication:
         row = conn.execute("SELECT price FROM price_history").fetchone()
         conn.close()
         assert row["price"] == 100.0
+
+
+class TestGetAllRoutes:
+    """Tests for get_all_routes."""
+
+    def test_empty_db(self, sample_db: PriceDatabase):
+        assert sample_db.get_all_routes() == []
+
+    def test_returns_distinct_routes(self, sample_db: PriceDatabase):
+        sample_db.record_offers([
+            _make_offer(origin="BIO", destination="BER", price=100),
+            _make_offer(origin="BIO", destination="BER", price=120),
+            _make_offer(origin="EAS", destination="BGY", price=80),
+        ])
+        routes = sample_db.get_all_routes()
+        assert ("BIO", "BER") in routes
+        assert ("EAS", "BGY") in routes
+        assert len(routes) == 2
+
+    def test_sorted_by_origin_then_dest(self, sample_db: PriceDatabase):
+        sample_db.record_offers([
+            _make_offer(origin="EAS", destination="BGY", price=80),
+            _make_offer(origin="BIO", destination="LHR", price=100),
+            _make_offer(origin="BIO", destination="BER", price=90),
+        ])
+        routes = sample_db.get_all_routes()
+        assert routes == [("BIO", "BER"), ("BIO", "LHR"), ("EAS", "BGY")]
+
+
+class TestGetPriceTrend:
+    """Tests for get_price_trend."""
+
+    def test_empty_db(self, sample_db: PriceDatabase):
+        trend = sample_db.get_price_trend("BIO", "BER")
+        assert trend == []
+
+    def test_returns_daily_aggregates(self, sample_db: PriceDatabase):
+        t1 = datetime(2026, 2, 1, 10, 0)
+        t2 = datetime(2026, 2, 1, 14, 0)
+        t3 = datetime(2026, 2, 2, 10, 0)
+        sample_db.record_offers([
+            _make_offer(price=100, queried_at=t1),
+            _make_offer(price=120, queried_at=t2),
+            _make_offer(price=90, queried_at=t3),
+        ])
+        trend = sample_db.get_price_trend("BIO", "BER", last_n_days=365)
+        assert len(trend) == 2  # Two distinct dates
+        assert trend[0]["count"] == 2  # Two records on Feb 1
+        assert trend[1]["count"] == 1  # One record on Feb 2
+        assert trend[0]["min_price"] == 100.0
+
+    def test_respects_day_filter(self, sample_db: PriceDatabase):
+        old = datetime(2025, 1, 1, 10, 0)
+        recent = datetime.now(UTC)
+        sample_db.record_offers([
+            _make_offer(price=100, queried_at=old),
+            _make_offer(price=120, queried_at=recent),
+        ])
+        trend = sample_db.get_price_trend("BIO", "BER", last_n_days=30)
+        # Only the recent record should appear
+        assert len(trend) == 1
+
+    def test_filters_by_route(self, sample_db: PriceDatabase):
+        sample_db.record_offers([
+            _make_offer(origin="BIO", destination="BER", price=100),
+            _make_offer(origin="BIO", destination="LHR", price=200),
+        ])
+        trend = sample_db.get_price_trend("BIO", "BER", last_n_days=365)
+        assert len(trend) == 1
+        assert trend[0]["avg_price"] == 100.0

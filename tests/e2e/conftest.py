@@ -86,9 +86,12 @@ def register_kiwi_routes(fixture_map: dict[str, str]) -> None:
 
             return callback
 
+        matcher = responses.matchers.query_param_matcher(
+            {"fly_from": fly_from, "fly_to": fly_to}, strict_match=False
+        )
         responses.add_callback(
             responses.GET,
             KIWI_SEARCH_URL,
             callback=make_callback(fixture_data, fly_from, fly_to),
-            match=[responses.matchers.query_param_matcher({"fly_from": fly_from, "fly_to": fly_to}, strict_match=False)],
+            match=[matcher],
         )

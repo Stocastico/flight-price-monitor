@@ -155,3 +155,78 @@ class TestRunCommandExtended:
 
         result = runner.invoke(cli, ["-c", str(valid_config_file), "run"])
         assert "Flight Monitor Report" in result.output
+
+
+class TestTrendsCommand:
+    def test_trends_empty_db(self, runner: CliRunner, valid_config_file: Path):
+        """Trends with no history should say so."""
+        result = runner.invoke(cli, ["-c", str(valid_config_file), "trends"])
+        assert result.exit_code == 0
+        assert "No price history" in result.output
+
+    def test_trends_with_data(self, runner: CliRunner, valid_config_file: Path):
+        """Trends should display route stats when data exists."""
+        from decimal import Decimal
+
+        from flight_monitor.config import load_config
+        from flight_monitor.models import Airport, FlightOffer, FlightSegment
+        from flight_monitor.storage.database import PriceDatabase
+
+        config = load_config(str(valid_config_file))
+        db = PriceDatabase(config.storage.db_path)
+        from datetime import datetime
+
+        for i, price in enumerate([100, 120, 90]):
+            dep = datetime(2026, 4, 1 + i, 10, 0)
+            seg = FlightSegment(
+                airline="VY",
+                flight_number=f"VY{i}",
+                origin=Airport(code="BIO"),
+                destination=Airport(code="BER"),
+                departure_time=dep,
+                arrival_time=dep.replace(hour=13),
+                duration_minutes=180,
+            )
+            offer = FlightOffer(
+                provider="kiwi",
+                provider_id=f"trend-{i}",
+                origin=seg.origin,
+                destination=seg.destination,
+                segments=[seg],
+                departure_time=dep,
+                arrival_time=dep.replace(hour=13),
+                total_duration_minutes=180,
+                stops=0,
+                price=Decimal(str(price)),
+                currency="EUR",
+            )
+            db.record_offers([offer])
+
+        result = runner.invoke(cli, ["-c", str(valid_config_file), "trends"])
+        assert result.exit_code == 0
+        assert "BIO -> BER" in result.output
+        assert "3 records" in result.output
+        assert "Avg:" in result.output
+        assert "Min:" in result.output
+
+    def test_trends_route_filter(self, runner: CliRunner, valid_config_file: Path):
+        """--route flag should filter to specific route."""
+        result = runner.invoke(
+            cli, ["-c", str(valid_config_file), "trends", "--route", "BIO-BER"]
+        )
+        assert result.exit_code == 0
+
+    def test_trends_invalid_route_format(self, runner: CliRunner, valid_config_file: Path):
+        """Invalid route format should show error."""
+        result = runner.invoke(
+            cli, ["-c", str(valid_config_file), "trends", "--route", "INVALID"]
+        )
+        assert result.exit_code == 1
+        assert "Invalid route format" in result.output
+
+    def test_trends_custom_days(self, runner: CliRunner, valid_config_file: Path):
+        """--days flag should be accepted."""
+        result = runner.invoke(
+            cli, ["-c", str(valid_config_file), "trends", "--days", "30"]
+        )
+        assert result.exit_code == 0
