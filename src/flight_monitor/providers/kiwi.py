@@ -38,6 +38,7 @@ class KiwiProvider(FlightSearchProvider):
         max_stopovers: int = 1,
         nonstop_only: bool = False,
         max_results: int = 50,
+        cabin_bag_only: bool = False,
     ) -> list[FlightOffer]:
         params = {
             "fly_from": origin,
@@ -54,6 +55,9 @@ class KiwiProvider(FlightSearchProvider):
             "asc": 1,
             "vehicle_type": "aircraft",
         }
+        if cabin_bag_only:
+            params["adult_hold_bag"] = 0
+            params["adult_hand_bag"] = 1
 
         try:
             resp = self._session.get(

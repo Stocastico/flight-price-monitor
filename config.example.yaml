@@ -44,6 +44,7 @@ filters:
   departure_time_latest: "22:00"
   allowed_airlines: []
   excluded_airlines: []
+  cabin_bag_only: false  # true = only search cabin-bag fares (no checked luggage)
 
 analysis:
   deal_threshold_pct: 25

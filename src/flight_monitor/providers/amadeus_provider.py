@@ -44,6 +44,7 @@ class AmadeusProvider(FlightSearchProvider):
         max_stopovers: int = 1,
         nonstop_only: bool = False,
         max_results: int = 50,
+        cabin_bag_only: bool = False,
     ) -> list[FlightOffer]:
         from amadeus import ResponseError
 

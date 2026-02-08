@@ -92,6 +92,7 @@ class FiltersConfig(BaseModel):
     departure_time_latest: str = "22:00"
     allowed_airlines: list[str] = Field(default_factory=list)
     excluded_airlines: list[str] = Field(default_factory=list)
+    cabin_bag_only: bool = False
 
 
 class AnalysisConfig(BaseModel):

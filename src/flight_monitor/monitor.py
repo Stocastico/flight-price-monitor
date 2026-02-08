@@ -93,6 +93,7 @@ class FlightMonitor:
                     currency=self._config.search.currency,
                     max_stopovers=self._config.filters.max_stops,
                     max_results=self._config.search.max_results_per_route,
+                    cabin_bag_only=self._config.filters.cabin_bag_only,
                 )
             except ProviderError as e:
                 logger.error("Search failed for %s->%s: %s", origin_code, destination_str, e)
@@ -111,6 +112,7 @@ class FlightMonitor:
                     currency=self._config.search.currency,
                     max_stopovers=self._config.filters.max_stops,
                     max_results=self._config.search.max_results_per_route,
+                    cabin_bag_only=self._config.filters.cabin_bag_only,
                 )
                 offers.extend(results)
             except ProviderError as e:

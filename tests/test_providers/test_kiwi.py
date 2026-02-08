@@ -424,3 +424,48 @@ class TestParseKiwiDatetimeExtended:
         dt = _parse_kiwi_datetime("2026-04-15T00:00:00.000Z")
         assert dt.hour == 0
         assert dt.minute == 0
+
+
+class TestCabinBagOnly:
+    @responses.activate
+    def test_cabin_bag_only_sends_baggage_params(self, provider: KiwiProvider):
+        """When cabin_bag_only=True, adult_hold_bag=0 and adult_hand_bag=1."""
+        responses.add(
+            responses.GET,
+            f"{KIWI_BASE_URL}/v2/search",
+            json={"data": []},
+            status=200,
+        )
+
+        provider.search_flights(
+            origin="BIO",
+            destination="BER",
+            date_from=date(2026, 4, 1),
+            date_to=date(2026, 6, 30),
+            cabin_bag_only=True,
+        )
+
+        request = responses.calls[0].request
+        assert "adult_hold_bag=0" in request.url
+        assert "adult_hand_bag=1" in request.url
+
+    @responses.activate
+    def test_no_cabin_bag_param_by_default(self, provider: KiwiProvider):
+        """By default, baggage params should not be sent."""
+        responses.add(
+            responses.GET,
+            f"{KIWI_BASE_URL}/v2/search",
+            json={"data": []},
+            status=200,
+        )
+
+        provider.search_flights(
+            origin="BIO",
+            destination="BER",
+            date_from=date(2026, 4, 1),
+            date_to=date(2026, 6, 30),
+        )
+
+        request = responses.calls[0].request
+        assert "adult_hold_bag" not in request.url
+        assert "adult_hand_bag" not in request.url

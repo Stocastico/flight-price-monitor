@@ -23,6 +23,7 @@ class FlightSearchProvider(ABC):
         max_stopovers: int = 1,
         nonstop_only: bool = False,
         max_results: int = 50,
+        cabin_bag_only: bool = False,
     ) -> list[FlightOffer]:
         """Search for flight offers on a single origin-destination pair.
 
