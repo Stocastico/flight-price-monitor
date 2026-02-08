@@ -20,6 +20,8 @@ Monitor flight prices from Basque Country airports (BIO, EAS, VIT) to European a
   - [Validating Configuration](#validating-configuration)
   - [Purging Old Data](#purging-old-data)
   - [Viewing Price Trends](#viewing-price-trends)
+  - [Watching Specific Routes](#watching-specific-routes)
+  - [Web Dashboard](#web-dashboard)
 - [Automated Scheduling](#automated-scheduling)
   - [Cron Setup](#cron-setup)
   - [Credential Management](#credential-management)
@@ -38,9 +40,11 @@ Monitor flight prices from Basque Country airports (BIO, EAS, VIT) to European a
 
 ## Features
 
-- **Multi-provider support**: Kiwi Tequila API (primary) and Amadeus Self-Service API (secondary), with an abstract provider interface for adding more
+- **Multi-provider support**: Kiwi Tequila API (primary), Amadeus Self-Service API, and Google Flights via SerpAPI, with an abstract provider interface for adding more
 - **Smart deal detection**: Compares current prices against historical averages stored in SQLite; flags deals that are 25%+ below average (configurable threshold)
-- **Flexible filtering**: Filter by maximum flight duration, departure time window, specific airlines (allow/block lists), and number of stops
+- **Flexible filtering**: Filter by maximum flight duration, departure time window, specific airlines (allow/block lists), number of stops, and cabin-bag-only fares
+- **Round-trip and flexible dates**: Search round-trip flights with configurable stay duration, or target specific dates with +/- N days flexibility
+- **Watch mode**: Monitor specific date+route combos (wishlist) and get alerted when prices drop under your target
 - **Direct flight priority**: Automatically ranks nonstop flights above connecting flights in results
 - **Dual reporting**: Console output for terminal usage and HTML reports for browser viewing, with optional email delivery via SMTP
 - **Telegram notifications**: Instant deal alerts to your phone via Telegram Bot API
@@ -48,13 +52,14 @@ Monitor flight prices from Basque Country airports (BIO, EAS, VIT) to European a
 - **Price trends**: CLI command to view daily price trends per route with averages, minimums, and offer counts
 - **Offer deduplication**: Identical offers from the same provider are automatically deduplicated via a unique index, keeping the database clean across runs
 - **Configurable lookback window**: Limit price history to recent N days for seasonal routes where old data distorts averages
+- **Web dashboard**: Flask-powered dashboard with Chart.js price trend charts per route
 - **Cron-ready**: Designed to run unattended every couple of weeks via cron or systemd timers
 - **Environment variable support**: Credentials and secrets are loaded from environment variables, never stored in config files
 
 ## Requirements
 
 - Python 3.11 or later
-- A free API key from [Kiwi Tequila](https://tequila.kiwi.com/) (primary provider) or [Amadeus for Developers](https://developers.amadeus.com/) (alternative provider)
+- A free API key from [Kiwi Tequila](https://tequila.kiwi.com/) (primary provider), [Amadeus for Developers](https://developers.amadeus.com/), or [SerpAPI](https://serpapi.com/) for Google Flights
 
 ## Installation
 
@@ -75,6 +80,9 @@ pip install -e ".[dev]"
 
 # For Amadeus provider support (optional)
 pip install -e ".[amadeus]"
+
+# For web dashboard (optional)
+pip install -e ".[dashboard]"
 ```
 
 After installation, the `flight-monitor` command is available in your shell.
@@ -92,7 +100,7 @@ cp config.example.yaml config.yaml
 The Kiwi Tequila API is the recommended provider. Sign up at [tequila.kiwi.com](https://tequila.kiwi.com/) to get a free API key.
 
 ```yaml
-provider: kiwi  # or "amadeus"
+provider: kiwi  # or "amadeus" or "serpapi"
 
 credentials:
   kiwi:
@@ -100,6 +108,8 @@ credentials:
   # amadeus:
   #   client_id: "${AMADEUS_CLIENT_ID}"
   #   client_secret: "${AMADEUS_CLIENT_SECRET}"
+  # serpapi:
+  #   api_key: "${SERPAPI_API_KEY}"
 ```
 
 Set your API key as an environment variable:
@@ -142,11 +152,18 @@ When using the Kiwi provider, multiple airport codes per destination are sent as
 
 ```yaml
 search:
-  date_range_days: 90     # Look for flights departing within the next 90 days
-  currency: EUR            # Currency for prices (EUR, USD, GBP, etc.)
-  adults: 1                # Number of passengers
-  max_results_per_route: 50  # Max offers to fetch per origin-destination pair
+  date_range_days: 90        # Look for flights departing within the next 90 days
+  currency: EUR               # Currency for prices (EUR, USD, GBP, etc.)
+  adults: 1                   # Number of passengers
+  flight_type: oneway         # "oneway" or "round" for round-trip
+  max_results_per_route: 50   # Max offers to fetch per origin-destination pair
+  nights_min: 2               # Min nights at destination (round-trip only)
+  nights_max: 7               # Max nights at destination (round-trip only)
+  target_dates: []            # Search specific dates instead of full range
+  date_flex_days: 3           # +/- days around each target date
 ```
+
+**Flexible dates**: Set `target_dates` to search around specific dates instead of the full `date_range_days` window. For example, `target_dates: ["2026-06-15", "2026-08-01"]` with `date_flex_days: 3` will search June 12-18 and July 29 - August 4.
 
 ### Filters
 
@@ -161,6 +178,7 @@ filters:
   departure_time_latest: "22:00"   # Latest acceptable departure time
   allowed_airlines: []             # Empty = all airlines; e.g., ["VY", "FR", "IB"]
   excluded_airlines: []            # Airlines to exclude; e.g., ["FR"] to skip Ryanair
+  cabin_bag_only: false            # true = only cabin-bag fares (no checked luggage)
 ```
 
 **Filter examples:**
@@ -231,6 +249,7 @@ The configuration file supports `${VAR_NAME}` syntax for environment variable in
 | `SMTP_PASSWORD` | Only if email enabled | SMTP password for email delivery |
 | `TELEGRAM_BOT_TOKEN` | Only if Telegram enabled | Telegram bot token from @BotFather |
 | `TELEGRAM_CHAT_ID` | Only if Telegram enabled | Telegram chat ID to send messages to |
+| `SERPAPI_API_KEY` | Yes (if using SerpAPI) | SerpAPI key for Google Flights |
 
 Environment variables in disabled sections (like email when `enabled: false`) are safely ignored even if unset.
 
@@ -332,6 +351,44 @@ BIO -> BER  (42 records)
     2026-02-07  avg 88   min 71  (22 offers)
 ```
 
+### Watching Specific Routes
+
+Monitor a wishlist of specific date+route combos:
+
+```yaml
+# In config.yaml
+watch_routes:
+  - origin: BIO
+    destination: BER
+    date: "2026-06-15"
+    max_price: 80  # optional: flag offers under this price
+  - origin: EAS
+    destination: BGY
+    date: "2026-08-01"
+```
+
+```bash
+flight-monitor -c config.yaml watch
+```
+
+This searches for flights around each target date (+/- `date_flex_days`) and shows the cheapest options. Offers under `max_price` are flagged with `<< UNDER TARGET`.
+
+### Web Dashboard
+
+Launch a local web dashboard to visualise price trends:
+
+```bash
+# Start on default port 5555
+flight-monitor -c config.yaml dashboard
+
+# Custom port and host
+flight-monitor -c config.yaml dashboard --port 8080 --host 0.0.0.0
+```
+
+The dashboard shows interactive Chart.js graphs with average and minimum price trends for each monitored route. An API endpoint at `/api/routes` returns JSON data for programmatic access.
+
+Requires Flask: `pip install flight-monitor[dashboard]`
+
 ## Automated Scheduling
 
 ### Cron Setup
@@ -375,7 +432,8 @@ src/flight_monitor/
   __init__.py           # Package version
   models.py             # Pydantic data models (Airport, FlightOffer, Deal, RouteKey)
   config.py             # YAML config loading with env var interpolation
-  cli.py                # Click CLI (run, validate, purge, trends commands)
+  cli.py                # Click CLI (run, validate, purge, trends, watch, dashboard)
+  dashboard.py          # Flask web dashboard with Chart.js charts
   monitor.py            # Orchestrator: search -> filter -> analyze -> record -> report
   filters.py            # Configurable flight filtering (stops, time, duration, airline)
   analyzer.py           # Deal detection via historical price comparison
@@ -385,6 +443,7 @@ src/flight_monitor/
     factory.py          # Provider factory (instantiate by config name)
     kiwi.py             # Kiwi Tequila API implementation
     amadeus_provider.py # Amadeus Self-Service API implementation
+    serpapi_provider.py # Google Flights via SerpAPI implementation
   storage/
     database.py         # SQLite storage for historical prices
 ```
@@ -425,6 +484,12 @@ class FlightSearchProvider(ABC):
 - OAuth2 handled by the SDK
 - Free test tier (~2000 calls/month)
 - Requires separate `pip install flight-monitor[amadeus]`
+
+**Google Flights via SerpAPI**:
+- Scrapes Google Flights results via SerpAPI
+- Returns both "best" and "other" flight results
+- Supports round-trip and one-way searches
+- Paid API (with free trial credits)
 
 ### Deal Detection Algorithm
 
@@ -527,12 +592,14 @@ Claude-code-experiments/
     test_providers/
       test_kiwi.py
       test_amadeus.py
+      test_serpapi.py
       test_factory.py
     e2e/                    # End-to-end tests with recorded HTTP fixtures
       conftest.py           # E2E config fixtures and route registration
       fixtures/             # Recorded Kiwi API JSON responses
       test_full_run.py      # Full monitor cycle tests
       test_cli_e2e.py       # CLI integration tests
+    test_dashboard.py       # Web dashboard tests
 ```
 
 ## Troubleshooting
@@ -551,6 +618,12 @@ Install the optional Amadeus dependency: `pip install flight-monitor[amadeus]`
 
 **HTML report not generated**
 Set `reporting.format: html` in your config and check `html_output_path` points to a writable location.
+
+**SerpAPI/Google Flights errors**
+Ensure `SERPAPI_API_KEY` is set and you have credits on your SerpAPI account.
+
+**Dashboard ImportError**
+Install Flask: `pip install flight-monitor[dashboard]`
 
 **Cron job not producing output**
 Check `~/.flight_monitor/monitor.log` for errors. Ensure the `.env` file exists and contains valid credentials. Verify the `--verbose` flag is placed before the `run` subcommand.

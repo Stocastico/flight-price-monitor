@@ -6,6 +6,8 @@ credentials:
   # amadeus:
   #   client_id: "${AMADEUS_CLIENT_ID}"
   #   client_secret: "${AMADEUS_CLIENT_SECRET}"
+  # serpapi:
+  #   api_key: "${SERPAPI_API_KEY}"
 
 origins:
   - code: BIO
