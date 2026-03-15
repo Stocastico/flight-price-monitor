@@ -10,6 +10,7 @@ import requests
 
 from flight_monitor.models import Airport, FlightOffer, FlightSegment
 from flight_monitor.providers.base import FlightSearchProvider, ProviderError
+from flight_monitor.retry import retry_on_exception
 
 logger = logging.getLogger(__name__)
 
@@ -67,14 +68,26 @@ class KiwiProvider(FlightSearchProvider):
             params["adult_hold_bag"] = 0
             params["adult_hand_bag"] = 1
 
-        try:
-            resp = self._session.get(
-                f"{KIWI_BASE_URL}/v2/search",
-                params=params,
-                timeout=self._timeout,
-            )
-        except requests.RequestException as exc:
-            raise ProviderError("kiwi", None, str(exc)) from exc
+        def _do_request() -> requests.Response:
+            try:
+                r = self._session.get(
+                    f"{KIWI_BASE_URL}/v2/search",
+                    params=params,
+                    timeout=self._timeout,
+                )
+            except requests.RequestException as exc:
+                raise ProviderError("kiwi", None, str(exc)) from exc
+            if r.status_code >= 500:
+                raise ProviderError("kiwi", r.status_code, r.text[:500])
+            return r
+
+        resp = retry_on_exception(
+            _do_request,
+            max_retries=3,
+            base_delay=2.0,
+            retryable=(ProviderError,),
+            description=f"Kiwi search {origin}->{destination}",
+        )
 
         if resp.status_code != 200:
             raise ProviderError("kiwi", resp.status_code, resp.text[:500])
