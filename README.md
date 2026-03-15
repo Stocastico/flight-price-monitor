@@ -36,6 +36,12 @@ Monitor flight prices from Basque Country airports (BIO, EAS, VIT) to European a
   - [Running Tests](#running-tests)
   - [Code Quality](#code-quality)
   - [Project Structure](#project-structure)
+- [Serverless Scheduling with GitHub Actions](#serverless-scheduling-with-github-actions)
+- [Setting Up Telegram Notifications (Step by Step)](#setting-up-telegram-notifications-step-by-step)
+- [Setting Up Email Notifications (Step by Step)](#setting-up-email-notifications-step-by-step)
+- [Alternative Flight Providers](#alternative-flight-providers)
+- [Recent Improvements](#recent-improvements)
+- [Roadmap](#roadmap)
 - [Troubleshooting](#troubleshooting)
 
 ## Features
@@ -438,6 +444,7 @@ src/flight_monitor/
   filters.py            # Configurable flight filtering (stops, time, duration, airline)
   analyzer.py           # Deal detection via historical price comparison
   reporter.py           # Console + HTML + Telegram report generation
+  retry.py              # Retry utility with exponential backoff
   providers/
     base.py             # Abstract FlightSearchProvider interface
     factory.py          # Provider factory (instantiate by config name)
@@ -568,10 +575,14 @@ mypy src/flight_monitor/
 ### Project Structure
 
 ```
-Claude-code-experiments/
+flight-price-monitor/
   pyproject.toml            # Build config, dependencies, tool settings
   config.example.yaml       # Example configuration file
+  CLAUDE.md                 # Development guide for AI-assisted coding
   README.md                 # This file
+  .github/
+    workflows/
+      monitor.yml           # GitHub Actions scheduled monitoring workflow
   scripts/
     run_monitor.sh          # Cron wrapper script
   src/
@@ -589,6 +600,7 @@ Claude-code-experiments/
     test_reporter.py
     test_monitor.py
     test_cli.py
+    test_retry.py
     test_providers/
       test_kiwi.py
       test_amadeus.py
@@ -601,6 +613,245 @@ Claude-code-experiments/
       test_cli_e2e.py       # CLI integration tests
     test_dashboard.py       # Web dashboard tests
 ```
+
+## Serverless Scheduling with GitHub Actions
+
+If you don't want to run a local server or keep a machine on, you can use the included GitHub Actions workflow to run the monitor on a schedule in the cloud — completely free for public repositories.
+
+### How It Works
+
+The workflow (`.github/workflows/monitor.yml`):
+1. Checks out your repo on a GitHub-hosted runner
+2. Installs the package
+3. Restores the SQLite price database from a previous run (stored as a GitHub artifact)
+4. Runs `flight-monitor run` with your config
+5. Saves the updated database as an artifact for next time
+6. Sends Telegram/email notifications if deals are found
+
+### Setup Steps
+
+1. **Push your config**: Make sure `config.yaml` is committed to the repo (or adjust the workflow path). Ensure Telegram/email are set to `enabled: true` in the config.
+
+2. **Add repository secrets**: Go to your repo on GitHub > Settings > Secrets and variables > Actions > New repository secret. Add each secret:
+
+   | Secret Name | Value |
+   |-------------|-------|
+   | `KIWI_API_KEY` | Your Kiwi Tequila API key |
+   | `TELEGRAM_BOT_TOKEN` | Your Telegram bot token (see [Telegram setup](#setting-up-telegram-notifications-step-by-step)) |
+   | `TELEGRAM_CHAT_ID` | Your Telegram chat ID |
+   | `SMTP_PASSWORD` | Your email app password (only if using email) |
+
+3. **Adjust the schedule**: Edit `.github/workflows/monitor.yml` to change the cron expression. Some examples:
+
+   ```yaml
+   # Every Monday at 8am UTC
+   - cron: "0 8 * * 1"
+
+   # Every day at 7am UTC
+   - cron: "0 7 * * *"
+
+   # 1st and 15th of each month at 9am UTC (default)
+   - cron: "0 9 1,15 * *"
+   ```
+
+4. **Test manually**: Go to Actions > Flight Price Monitor > Run workflow to trigger a manual run and verify everything works.
+
+### Other Serverless Alternatives
+
+| Platform | Free Tier | Persistent Storage | Notes |
+|----------|-----------|-------------------|-------|
+| **GitHub Actions** | 2,000 min/month (public: unlimited) | Via artifacts (90 days) | Recommended, zero setup beyond secrets |
+| **PythonAnywhere** | 1 scheduled task/day | Filesystem persists | Good for daily checks |
+| **Google Cloud Functions** | 2M invocations/month | Use Cloud Storage for DB | More setup, very reliable |
+| **AWS Lambda + EventBridge** | 1M requests/month | Use S3 for DB | Near-free at this scale |
+| **Render.com** | Cron jobs on free tier | Disk on paid tier | Simple Docker-based |
+| **Railway.app** | $5/month hobby plan | Persistent volumes | Easy deployment |
+
+## Setting Up Telegram Notifications (Step by Step)
+
+Telegram is the easiest way to get flight deal alerts on your phone. Here's the complete setup:
+
+### Step 1: Create a Telegram Bot
+
+1. Open Telegram and search for **@BotFather** (the official bot for creating bots)
+2. Send `/newbot`
+3. Choose a **display name** for your bot (e.g., "Flight Deals Bot")
+4. Choose a **username** that ends in `bot` (e.g., `my_flight_deals_bot`)
+5. BotFather will reply with a **bot token** like `7123456789:AAH1234abcd5678efgh9012ijklmnop`. **Save this token** — you'll need it as `TELEGRAM_BOT_TOKEN`
+
+### Step 2: Get Your Chat ID
+
+1. Open a chat with your new bot in Telegram and send any message (e.g., "hello")
+2. Open this URL in your browser (replace `YOUR_BOT_TOKEN` with the actual token):
+   ```
+   https://api.telegram.org/botYOUR_BOT_TOKEN/getUpdates
+   ```
+3. Look for `"chat":{"id":123456789}` in the JSON response. The number is your **chat ID**. Save it as `TELEGRAM_CHAT_ID`
+
+   **For group chats**: Add the bot to your group, send a message in the group, then check `/getUpdates`. Group chat IDs are negative numbers (e.g., `-100123456789`)
+
+### Step 3: Configure the Monitor
+
+Set the environment variables:
+
+```bash
+export TELEGRAM_BOT_TOKEN="7123456789:AAH1234abcd5678efgh9012ijklmnop"
+export TELEGRAM_CHAT_ID="123456789"
+```
+
+For persistent setup, add them to `~/.flight_monitor/.env`:
+
+```bash
+cat >> ~/.flight_monitor/.env << 'EOF'
+TELEGRAM_BOT_TOKEN=7123456789:AAH1234abcd5678efgh9012ijklmnop
+TELEGRAM_CHAT_ID=123456789
+EOF
+```
+
+Enable Telegram in `config.yaml`:
+
+```yaml
+reporting:
+  telegram:
+    enabled: true
+    bot_token: "${TELEGRAM_BOT_TOKEN}"
+    chat_id: "${TELEGRAM_CHAT_ID}"
+```
+
+### Step 4: Test It
+
+```bash
+flight-monitor -c config.yaml --verbose run
+```
+
+If deals are found, you'll receive a Telegram message like:
+
+```
+*Flight Deals* (2 found)
+
+  BIO > BER  *EUR 65*  (direct)  -35%
+  Apr 02 10:30  VY
+  Book: https://www.kiwi.com/...
+
+  BIO > BGY  *EUR 29*  (direct)  -42% NEW LOW
+  Mar 15 06:30  FR
+  Book: https://www.kiwi.com/...
+```
+
+## Setting Up Email Notifications (Step by Step)
+
+### Using Gmail
+
+1. **Enable 2-Step Verification** on your Google account (required for app passwords)
+2. Go to [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
+3. Generate an **App Password** for "Mail". You'll get a 16-character password like `abcd efgh ijkl mnop`
+4. Set it as an environment variable:
+
+   ```bash
+   export SMTP_PASSWORD="abcdefghijklmnop"   # remove the spaces
+   ```
+
+5. Configure in `config.yaml`:
+
+   ```yaml
+   reporting:
+     format: html   # email requires HTML format
+     email:
+       enabled: true
+       smtp_host: smtp.gmail.com
+       smtp_port: 587
+       sender: "your.email@gmail.com"
+       password: "${SMTP_PASSWORD}"
+       recipients:
+         - "your.email@gmail.com"
+         - "friend@example.com"   # optional: send to others too
+   ```
+
+### Using Other Email Providers
+
+| Provider | SMTP Host | Port |
+|----------|-----------|------|
+| Gmail | `smtp.gmail.com` | 587 |
+| Outlook/Hotmail | `smtp-mail.outlook.com` | 587 |
+| Yahoo | `smtp.mail.yahoo.com` | 587 |
+| ProtonMail Bridge | `127.0.0.1` | 1025 |
+| Custom domain (e.g., Fastmail) | Check your provider's docs | 587 |
+
+### Combining Email + Telegram
+
+Both can be enabled simultaneously. Email sends the full HTML report; Telegram sends a compact summary. This is useful for archiving (email) + quick glance on your phone (Telegram).
+
+```yaml
+reporting:
+  format: html
+  email:
+    enabled: true
+    # ... email config ...
+  telegram:
+    enabled: true
+    # ... telegram config ...
+```
+
+## Alternative Flight Providers
+
+The project currently supports **Kiwi Tequila**, **Amadeus**, and **Google Flights via SerpAPI**. Here's a comparison with other providers that were considered:
+
+### Currently Supported
+
+| Provider | Free Tier | Strengths | Limitations |
+|----------|-----------|-----------|-------------|
+| **Kiwi Tequila** (recommended) | Yes, personal use | Batch queries (comma-separated destinations), booking links, excellent docs | Rate limits on free tier |
+| **Amadeus Self-Service** | ~2,000 calls/month | Industry standard, official SDK | Per-date queries (slower), no booking links |
+| **SerpAPI (Google Flights)** | 100 free searches | Real Google Flights data, broad coverage | Paid beyond trial, no booking links |
+
+### Considered But Not Yet Integrated
+
+| Provider | API Status | Feasibility | Notes |
+|----------|-----------|-------------|-------|
+| **Skyscanner** | Via RapidAPI only | Medium | Skyscanner shut down their direct API (Partners API) for new registrations. Available through RapidAPI marketplace as "Sky Scrapper" or similar third-party wrappers, but these are unofficial, paid ($10-50/month), and frequently change. Not recommended for reliability. |
+| **Kayak** | No public API | Low | Kayak does not offer a public API. Scraping their website violates their ToS. The only path is SerpAPI (which already supports Google Flights, making Kayak redundant). |
+| **Trivago** | No flight API | N/A | Trivago is a hotel metasearch engine. They do not offer flight search at all. |
+| **Ryanair** | Unofficial/internal | Medium | Ryanair has an internal API (`services-api.ryanair.com`) used by their website. There are unofficial Python libraries (`ryanair-py`) that wrap it. However, this is subject to breaking without notice, and may violate Ryanair's ToS. Could be useful for Ryanair-heavy routes but not recommended as a primary provider. |
+| **Google Flights (direct)** | No public API | Low | Google does not offer a direct Flights API. The only way is via SerpAPI (already supported) or web scraping (fragile). The deprecated Google QPX Express API was shut down in 2018. |
+| **Flightaware / AeroAPI** | Yes, paid | Low | Focuses on real-time flight tracking, not price search. Not suitable for deal monitoring. |
+| **Duffel** | Yes, free tier | High | Modern travel API with good developer experience. Supports flight search with booking. Could be a strong future addition. |
+| **Travelport / Sabre** | Enterprise only | Low | GDS systems aimed at travel agencies. Complex onboarding, not suitable for personal projects. |
+
+### Recommendation
+
+For personal use, **Kiwi Tequila** remains the best option — it's free, has the richest API (booking links, batch queries), and is well-documented. For broader coverage, adding **Duffel** as a fourth provider would be the most practical future integration. Ryanair's unofficial API could be useful for Ryanair-specific route monitoring but is fragile.
+
+## Recent Improvements
+
+### GitHub Actions Workflow
+- Added `.github/workflows/monitor.yml` for serverless scheduled monitoring
+- Database persistence between runs via GitHub Actions artifacts
+- Manual trigger support via `workflow_dispatch`
+
+### Retry with Exponential Backoff
+- New `retry.py` utility with configurable max retries, delay, and backoff factor
+- Integrated into Kiwi and SerpAPI providers (retries on 5xx server errors)
+- Integrated into email (SMTP) and Telegram notification delivery
+- Prevents transient network failures from silently losing notifications
+
+### Improved Error Handling
+- Replaced bare `except Exception` in reporter with specific exception types (`OSError`, `smtplib.SMTPException`, `requests.RequestException`)
+- Added configurable timeout to Amadeus provider (previously had no timeout)
+
+## Roadmap
+
+Potential future improvements, roughly ordered by impact:
+
+- **Async I/O**: Use `aiohttp` + `asyncio` to search multiple routes concurrently (significant speedup with many routes)
+- **Multi-provider fallback**: Automatically try a backup provider when the primary one fails
+- **Duffel provider**: Add Duffel as a fourth provider for broader airline coverage
+- **Jinja2 templates**: Extract inline HTML from `reporter.py` into template files
+- **Webhook notifications**: POST deal JSON to a URL for Slack, Discord, IFTTT integration
+- **Price prediction**: Trend analysis to suggest whether prices are likely to rise or fall
+- **Docker image**: For easy deployment to any cloud platform
+- **Database migrations**: Schema versioning for safe upgrades
+- **Export to CSV/JSON**: For external analysis or backup of price history
+- **Health checks**: Heartbeat pings (e.g., Healthchecks.io) to verify scheduled runs are executing
 
 ## Troubleshooting
 
@@ -627,3 +878,12 @@ Install Flask: `pip install flight-monitor[dashboard]`
 
 **Cron job not producing output**
 Check `~/.flight_monitor/monitor.log` for errors. Ensure the `.env` file exists and contains valid credentials. Verify the `--verbose` flag is placed before the `run` subcommand.
+
+**GitHub Actions workflow not running**
+Ensure the workflow file is on the default branch (main/master). Check Actions > Flight Price Monitor for run history. Verify all required secrets are configured in Settings > Secrets. Use "Run workflow" for a manual test.
+
+**Telegram message not received**
+Make sure you started a conversation with your bot first (send it any message). Verify the chat ID is correct by checking `https://api.telegram.org/botYOUR_TOKEN/getUpdates`. For group chats, the chat ID is a negative number.
+
+**Email "Application-specific password required"**
+If using Gmail, you need an App Password, not your regular password. Enable 2-Step Verification first, then generate an App Password at myaccount.google.com/apppasswords.
