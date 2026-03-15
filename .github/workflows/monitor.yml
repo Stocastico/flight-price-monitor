@@ -1,0 +1,82 @@
+# Scheduled flight price monitoring via GitHub Actions.
+# Runs twice a month and sends notifications via Telegram/email.
+#
+# Required repository secrets:
+#   KIWI_API_KEY          - Kiwi Tequila API key
+#   TELEGRAM_BOT_TOKEN    - Telegram bot token (optional)
+#   TELEGRAM_CHAT_ID      - Telegram chat ID (optional)
+#   SMTP_PASSWORD          - Email SMTP password (optional)
+#
+# The SQLite database is persisted as a workflow artifact between runs.
+# To bootstrap with existing history, upload prices.db as an artifact
+# named "price-database".
+
+name: Flight Price Monitor
+
+on:
+  schedule:
+    # Run at 09:00 UTC on the 1st and 15th of each month
+    - cron: "0 9 1,15 * *"
+  workflow_dispatch:  # Allow manual triggers
+
+permissions:
+  contents: read
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install .
+
+      - name: Restore price database
+        uses: dawidd6/action-download-artifact@v6
+        with:
+          name: price-database
+          path: ${{ runner.temp }}
+          if_no_artifact_found: warn
+          search_artifacts: true
+          workflow_conclusion: ""
+
+      - name: Prepare config directory
+        run: |
+          mkdir -p ~/.flight_monitor
+          if [ -f "${{ runner.temp }}/prices.db" ]; then
+            cp "${{ runner.temp }}/prices.db" ~/.flight_monitor/prices.db
+            echo "Restored existing price database"
+          else
+            echo "Starting with fresh database"
+          fi
+
+      - name: Run flight monitor
+        env:
+          KIWI_API_KEY: ${{ secrets.KIWI_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+        run: |
+          flight-monitor -c config.yaml --verbose run || exit_code=$?
+          # exit code 1 = no deals found (normal), only fail on real errors
+          if [ "${exit_code:-0}" -gt 1 ]; then
+            exit "$exit_code"
+          fi
+
+      - name: Save price database
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: price-database
+          path: ~/.flight_monitor/prices.db
+          retention-days: 90
+          overwrite: true

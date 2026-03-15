@@ -19,7 +19,7 @@ class AmadeusProvider(FlightSearchProvider):
     Requires the optional 'amadeus' dependency: pip install flight-monitor[amadeus]
     """
 
-    def __init__(self, client_id: str, client_secret: str):
+    def __init__(self, client_id: str, client_secret: str, timeout: int = 30):
         try:
             from amadeus import Client
         except ImportError as exc:
@@ -28,7 +28,11 @@ class AmadeusProvider(FlightSearchProvider):
                 "Install it with: pip install flight-monitor[amadeus]"
             ) from exc
 
-        self._client = Client(client_id=client_id, client_secret=client_secret)
+        self._client = Client(
+            client_id=client_id,
+            client_secret=client_secret,
+            http={"timeout": timeout},
+        )
 
     def name(self) -> str:
         return "amadeus"

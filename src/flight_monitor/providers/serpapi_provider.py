@@ -10,6 +10,7 @@ import requests
 
 from flight_monitor.models import Airport, FlightOffer, FlightSegment
 from flight_monitor.providers.base import FlightSearchProvider, ProviderError
+from flight_monitor.retry import retry_on_exception
 
 logger = logging.getLogger(__name__)
 
@@ -58,14 +59,26 @@ class SerpApiProvider(FlightSearchProvider):
         if nonstop_only:
             params["stops"] = 0
 
-        try:
-            resp = requests.get(
-                SERPAPI_BASE_URL,
-                params=params,
-                timeout=self._timeout,
-            )
-        except requests.RequestException as exc:
-            raise ProviderError("serpapi", None, str(exc)) from exc
+        def _do_request() -> requests.Response:
+            try:
+                r = requests.get(
+                    SERPAPI_BASE_URL,
+                    params=params,
+                    timeout=self._timeout,
+                )
+            except requests.RequestException as exc:
+                raise ProviderError("serpapi", None, str(exc)) from exc
+            if r.status_code >= 500:
+                raise ProviderError("serpapi", r.status_code, r.text[:500])
+            return r
+
+        resp = retry_on_exception(
+            _do_request,
+            max_retries=3,
+            base_delay=2.0,
+            retryable=(ProviderError,),
+            description=f"SerpAPI search {origin}->{destination}",
+        )
 
         if resp.status_code != 200:
             raise ProviderError("serpapi", resp.status_code, resp.text[:500])

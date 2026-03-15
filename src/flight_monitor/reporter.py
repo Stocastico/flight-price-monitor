@@ -14,6 +14,7 @@ import requests
 
 from flight_monitor.config import ReportingConfig
 from flight_monitor.models import Deal, FlightOffer
+from flight_monitor.retry import retry_on_exception
 
 logger = logging.getLogger(__name__)
 
@@ -145,32 +146,57 @@ class Reporter:
         msg["From"] = cfg.sender
         msg["To"] = ", ".join(cfg.recipients)
         msg.attach(MIMEText(html_body, "html"))
-        try:
+
+        def _do_send() -> None:
             with smtplib.SMTP(cfg.smtp_host, cfg.smtp_port) as server:
                 server.starttls()
                 server.login(cfg.sender, cfg.password)
                 server.send_message(msg)
+
+        try:
+            retry_on_exception(
+                _do_send,
+                max_retries=3,
+                base_delay=2.0,
+                retryable=(OSError, smtplib.SMTPException),
+                description="email delivery",
+            )
             logger.info("Email sent to %s", cfg.recipients)
-        except Exception:
-            logger.exception("Failed to send email")
+        except (OSError, smtplib.SMTPException):
+            logger.exception("Failed to send email after retries")
 
     def _send_telegram(self, deals: list[Deal]) -> None:
         """Send deal summary to Telegram via Bot API."""
         cfg = self._config.telegram
         text = self._format_telegram(deals)
         url = f"https://api.telegram.org/bot{cfg.bot_token}/sendMessage"
-        try:
+
+        def _do_send() -> None:
             resp = requests.post(
                 url,
                 json={"chat_id": cfg.chat_id, "text": text, "parse_mode": "Markdown"},
                 timeout=15,
             )
-            if resp.ok:
-                logger.info("Telegram message sent to chat %s", cfg.chat_id)
-            else:
-                logger.warning("Telegram API returned %s: %s", resp.status_code, resp.text[:200])
-        except Exception:
-            logger.exception("Failed to send Telegram message")
+            if not resp.ok:
+                if resp.status_code >= 500:
+                    raise requests.HTTPError(
+                        f"Telegram server error {resp.status_code}", response=resp
+                    )
+                logger.warning(
+                    "Telegram API returned %s: %s", resp.status_code, resp.text[:200]
+                )
+
+        try:
+            retry_on_exception(
+                _do_send,
+                max_retries=3,
+                base_delay=2.0,
+                retryable=(OSError, requests.RequestException),
+                description="Telegram notification",
+            )
+            logger.info("Telegram message sent to chat %s", cfg.chat_id)
+        except (OSError, requests.RequestException):
+            logger.exception("Failed to send Telegram message after retries")
 
     @staticmethod
     def _format_telegram(deals: list[Deal]) -> str:
