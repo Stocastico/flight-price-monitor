@@ -41,7 +41,7 @@ jobs:
         run: pip install .
 
       - name: Restore price database
-        uses: dawidd6/action-download-artifact@v6
+        uses: dawidd6/action-download-artifact@v20
         with:
           name: price-database
           path: ${{ runner.temp }}
@@ -66,7 +66,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
         run: |
-          flight-monitor -c config.yaml --verbose run || exit_code=$?
+          flight-monitor -c config.example.yaml --verbose run || exit_code=$?
           # exit code 1 = no deals found (normal), only fail on real errors
           if [ "${exit_code:-0}" -gt 1 ]; then
             exit "$exit_code"
